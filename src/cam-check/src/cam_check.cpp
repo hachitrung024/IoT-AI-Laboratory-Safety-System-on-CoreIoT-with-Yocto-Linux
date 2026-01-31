@@ -1,7 +1,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
-#include "cam_check.h"
+#include "cam_check.hpp"
 
 int main()
 {
