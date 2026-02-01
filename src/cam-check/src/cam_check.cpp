@@ -1,37 +1,27 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
-#include "cam_check.hpp"
+int main() {
+    std::string pipeline = "v4l2src device=/dev/video0 ! "
+                           "video/x-bayer,format=bggr,width=640,height=480 ! "
+                           "bcm2835isp ! "
+                           "video/x-raw,format=BGR ! "
+                           "videoconvert ! appsink drop=true";
 
-int main()
-{
-    cv::VideoCapture cap("/dev/camera0", cv::CAP_V4L2);
-    
+    cv::VideoCapture cap(pipeline, cv::CAP_GSTREAMER);
+
     if (!cap.isOpened()) {
-        std::cerr << "ERROR: Cannot open camera" << std::endl;
+        std::cerr << "ERROR: Cannot open camera via GStreamer!" << std::endl;
         return -1;
     }
 
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-
     cv::Mat frame;
-
-    for(int i = 0; i < 5; i++) cap.grab();
-
     while (true) {
         cap >> frame;
-        if (frame.empty()) {
-            std::cerr << "ERROR: Empty frame" << std::endl;
-            continue; 
-        }
+        if (frame.empty()) break;
 
-        cv::imshow("Camera Check", frame);
-
-        if (cv::waitKey(30) == 27)
-            break;
+        cv::imshow("LSMY Camera Check", frame);
+        if (cv::waitKey(30) == 27) break;
     }
-
-    cap.release();
     return 0;
 }
