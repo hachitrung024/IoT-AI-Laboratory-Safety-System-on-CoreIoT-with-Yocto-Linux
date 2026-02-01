@@ -5,24 +5,25 @@
 
 int main()
 {
-    cv::VideoCapture cap;
-    if (!cap.open("/dev/video0", cv::CAP_V4L2)) {
+    cv::VideoCapture cap("/dev/camera0", cv::CAP_V4L2);
+    
+    if (!cap.isOpened()) {
         std::cerr << "ERROR: Cannot open camera" << std::endl;
         return -1;
     }
 
     cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-    cap.set(cv::CAP_PROP_FOURCC,
-            cv::VideoWriter::fourcc('B','G','R','3'));
 
     cv::Mat frame;
+
+    for(int i = 0; i < 5; i++) cap.grab();
 
     while (true) {
         cap >> frame;
         if (frame.empty()) {
             std::cerr << "ERROR: Empty frame" << std::endl;
-            break;
+            continue; 
         }
 
         cv::imshow("Camera Check", frame);
@@ -31,5 +32,6 @@ int main()
             break;
     }
 
+    cap.release();
     return 0;
 }
