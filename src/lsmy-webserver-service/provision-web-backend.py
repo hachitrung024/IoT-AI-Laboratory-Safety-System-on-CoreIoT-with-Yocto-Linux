@@ -160,7 +160,7 @@ async def read_sensors():
         log.error("Failed to read sensors via IPC: %s", e)
         return None
 
-GPIO_CHIP = '/dev/gpiochip4'
+GPIO_CHIP = '/dev/gpiochip0'
 GPIO_LINE = 16
 
 def set_gpio(gpio_num: int, on: bool):
