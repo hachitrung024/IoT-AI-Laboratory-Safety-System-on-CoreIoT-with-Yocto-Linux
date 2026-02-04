@@ -7,7 +7,7 @@ import json
 import subprocess
 import logging
 import websockets
-from periphery import GPIO
+import gpiod
 
 # ====== IPC LIBRARY ======
 from lsmy_python_lib.ipc import send_connect_wifi_signal_ipc, send_request_get_data_ipc, LAST_TELEMETRY
@@ -160,20 +160,22 @@ async def read_sensors():
         log.error("Failed to read sensors via IPC: %s", e)
         return None
 
+GPIO_CHIP = '/dev/gpiochip4'
+GPIO_LINE = 16
+
 def set_gpio(gpio_num: int, on: bool):
-    value = True if on else False
-
     try:
-        gpio = GPIO(gpio_num, "out")
-        gpio.write(value)
-        gpio.close()
-
-        log.info(
-            "GPIO %d set to %s",
-            gpio_num,
-            "ON" if on else "OFF"
-        )
-
+        with gpiod.request_lines(
+            GPIO_CHIP,
+            consumer="lsmy-provision",
+            config={
+                gpio_num: gpiod.LineSettings(
+                    direction=gpiod.Direction.OUTPUT,
+                    output_value=gpiod.Value.ACTIVE if on else gpiod.Value.INACTIVE
+                )
+            }
+        ) as request:
+            log.info("GPIO %d set to %s", gpio_num, "ON" if on else "OFF")
     except Exception as e:
         log.error("GPIO %d control failed: %s", gpio_num, e)
         raise
