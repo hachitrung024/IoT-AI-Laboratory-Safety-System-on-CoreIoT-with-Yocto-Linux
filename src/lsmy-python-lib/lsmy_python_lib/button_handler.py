@@ -1,7 +1,8 @@
+from datetime import timedelta
 import time
 import logging
 import gpiod
-from gpiod.line import Direction, Edge, Bias
+from gpiod.line import Direction, Edge, Bias, Value
 
 # ====== WIFI MODE LIBRARY ======
 from lsmy_python_lib.wifi_mode_manager import WiFiModeManager
@@ -28,8 +29,9 @@ def monitor_button_reset(wifi_manager: WiFiModeManager):
     try:
         line_settings = gpiod.LineSettings(
             direction=Direction.INPUT,
-            edge_detection=Edge.BOTH,
-            bias=Bias.PULL_UP
+            edge_detection=Edge.FALLING,
+            bias=Bias.PULL_UP,
+            debounce_period=timedelta(milliseconds=50)
         )
 
         with gpiod.request_lines(
@@ -43,20 +45,25 @@ def monitor_button_reset(wifi_manager: WiFiModeManager):
 
             while True:
                 if request.wait_edge_events():
-                    for event in request.read_edge_events():
-                        if event.event_type == gpiod.EdgeEvent.Type.FALLING_EDGE:
-                            press_start = time.time()
-                        
-                        elif event.event_type == gpiod.EdgeEvent.Type.RISING_EDGE:
-                            if press_start > 0:
-                                duration = time.time() - press_start
-                                log.info(f"Button released after {duration:.2f}s")
-                                
-                                if duration >= 3.0:
-                                    log.warning("Full reset triggered!")
-                                    execute_full_reset(wifi_manager)
-                                
-                                press_start = 0
+                    request.read_edge_events()
+                    
+                    press_start = time.time()
+                    log.info("Button Pressed")
+
+                    while True:
+                        current_state = request.get_value(BUTTON_PIN)
+
+                        if current_state == Value.INACTIVE:
+                            time.sleep(0.5)
+                        else:
+                            final_duration = time.time() - press_start
+                            log.info(f"Button Released. Total duration: {final_duration:.2f}s")
+                            
+                            if final_duration >= 3.0:
+                                log.warning("Full reset triggered!")
+                                execute_full_reset(wifi_manager)
+                            
+                            break
 
     except Exception as e:
         log.error(f"gpiod Monitor Error: {e}")

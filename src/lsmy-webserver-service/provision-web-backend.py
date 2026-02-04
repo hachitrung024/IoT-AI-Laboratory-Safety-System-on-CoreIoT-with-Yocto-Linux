@@ -8,6 +8,7 @@ import subprocess
 import logging
 import websockets
 import gpiod
+from gpiod.line import Direction, Value
 
 # ====== IPC LIBRARY ======
 from lsmy_python_lib.ipc import send_connect_wifi_signal_ipc, send_request_get_data_ipc, LAST_TELEMETRY
@@ -170,8 +171,8 @@ def set_gpio(gpio_num: int, on: bool):
             consumer="lsmy-provision",
             config={
                 gpio_num: gpiod.LineSettings(
-                    direction=gpiod.Direction.OUTPUT,
-                    output_value=gpiod.Value.ACTIVE if on else gpiod.Value.INACTIVE
+                    direction=Direction.OUTPUT,
+                    output_value=Value.ACTIVE if on else Value.INACTIVE
                 )
             }
         ) as request:
