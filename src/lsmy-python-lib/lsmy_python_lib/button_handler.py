@@ -54,7 +54,7 @@ def monitor_button_reset(wifi_manager: WiFiModeManager):
                         current_state = request.get_value(BUTTON_PIN)
 
                         if current_state == Value.INACTIVE:
-                            time.sleep(0.5)
+                            time.sleep(0.1)
                         else:
                             final_duration = time.time() - press_start
                             log.info(f"Button Released. Total duration: {final_duration:.2f}s")

@@ -58,6 +58,9 @@ from lsmy_python_lib.ipc import ipc_server_task
 # ====== BUTTON RESET LIBRARY ======
 from lsmy_python_lib.button_handler import monitor_button_reset
 
+# ====== COMMAND RUNNER LIBRARY ======
+from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
+
 # ====== GLOBAL STORE LIBRARY ======
 from lsmy_python_lib.global_store import Global_Store
 
@@ -166,8 +169,13 @@ class LsmyApplication:
 
         log.info("Stopping wifi mode services")
         self.wifi_manager.cleanup_wifi()
+        log.info("Stopping provision webserver services")
         self.provision_webserver_manager.stop()
-        pass
+
+        log.info("Stopping network time synchronization services")
+        run_cmd(["systemctl", "stop", "wpa_supplicant"], check=False)
+        
+        log.info("Core services stopped")
 
     # -------- Signals --------
     def _setup_signal_handlers(self):
