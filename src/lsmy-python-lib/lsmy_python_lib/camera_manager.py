@@ -17,7 +17,7 @@ class CameraManager:
     def __init__(self, device_id=0):
         log.info("CameraManager initialized")
         self.device_id = device_id
-        self.max_recover_retries = MAX_RECOVER_TRIES
+        self._max_recover_retries = MAX_RECOVER_TRIES
         self._stop_event = threading.Event()
 
         update_camera_status("INACTIVE")
@@ -40,26 +40,26 @@ class CameraManager:
         log.info("Starting Camera main process thread...")
         update_camera_status("RUNNING")
 
-        retries_count = 0
-
         while True:
             camera_status = ""
             while not self._stop_event.is_set():
                 try:
                     camera_status = get_camera_status()
+                    retries_count = get_retries_count()
 
                     if(camera_status == "STOPPED"):
                         self._stop_event.set()
-                        continue
+                        break
                     elif(camera_status == "RESTARTING"):
-                        if retries_count < self.max_recover_retries:
+                        if retries_count < self._max_recover_retries:
                             self._stop_event.set()
                             retries_count = retries_count + 1
-                            continue
                         else:
                             retries_count = 0
                             update_camera_status("STOPPED")
-                            continue
+
+                        update_retries_count(retries_count)
+                        continue
                     else:
                         self._stop_event.wait(5)
                         continue
@@ -92,4 +92,12 @@ def update_camera_status(value: str):
 # Get camera_status
 def get_camera_status():
     return Global_Store.get("camera_status")
+
+# Update retries_count
+def update_retries_count(value: int):
+    Global_Store.set("retries_count", value)
+    
+# Get retries_count
+def get_retries_count():
+    return Global_Store.get("retries_count")
         

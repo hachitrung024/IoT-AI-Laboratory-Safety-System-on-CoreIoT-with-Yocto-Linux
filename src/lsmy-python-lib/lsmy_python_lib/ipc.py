@@ -4,6 +4,8 @@ import asyncio
 import logging
 import random
 
+from lsmy_python_lib.camera_manager import get_retries_count
+
 from lsmy_python_lib.wifi_config_manager import update_wifi_connect_signal
 from lsmy_python_lib.camera_manager import update_camera_status
 
@@ -70,7 +72,11 @@ async def handle_client(reader, writer):
 
             log.info("Update camera status received: status=%s", status)
 
-            resp = {"status": "ok"}
+            data = {
+                "retries_count": get_retries_count(),
+            }
+
+            resp = {"status": "ok", "data": data}
         else:
             resp = {"status": "error", "error": "Unknown command"}
 

@@ -12,10 +12,12 @@ from lsmy_python_lib.ipc import send_update_camera_status_signal_ipc
 CAMERA_DEVICE = "/dev/camera0"
 CHECK_INTERVAL = 20           
 MAX_INACTIVE_TIME = 20
+MAX_RECOVER_TRIES = 3
 
 # ===== STATE =====
 last_interrupt_count = None
 inactive_duration = 0
+is_retry = True
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,18 +69,30 @@ async def recover_camera():
     log.warning("Trying to recover camera...")
 
     try:
+        is_retry = True
+
         # Option 1: restart camera pipeline
         data = {
             "status": "RESTARTING" 
         }
-        await send_update_camera_status_signal_ipc(data)
+        resq = await send_update_camera_status_signal_ipc(data)
+
+        if resq.get("status") == "ok":
+            retries_count = resq["data"]["retries_count"]
+
+            if retries_count < (MAX_RECOVER_TRIES - 1):
+                is_retry = True
+            else:
+                is_retry = False
+        else:
+            log.error("IPC Server returned error: %s", resq.get("error"))
+            return False
 
         # Option 2: reload driver (do not recommneded)
         # subprocess.run(["modprobe", "-r", "unicam"], check=False)
         # subprocess.run(["modprobe", "unicam"], check=False)
 
-        time.sleep(5)
-        return True
+        return is_retry
     except Exception as e:
         log.error(f"Recover failed: {e}")
         return False
@@ -86,14 +100,17 @@ async def recover_camera():
 
 # ---------- MAIN LOOP ----------
 async def main():
-    global inactive_duration
+    global inactive_duration, is_retry
 
     while True:
         healthy = check_camera_health()
 
+        if not is_retry:
+            break
+
         if not healthy:
             log.error(f"Camera unhealthy, try to restart camera pipeline...")
-            await recover_camera()
+            is_retry = await recover_camera()
             inactive_duration = 0
 
         time.sleep(CHECK_INTERVAL)
