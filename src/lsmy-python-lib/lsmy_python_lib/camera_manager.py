@@ -90,5 +90,5 @@ def update_camera_status(value: str):
 
 # Get camera_status
 def get_camera_status():
-    Global_Store.set("camera_status")
+    Global_Store.get("camera_status")
         
