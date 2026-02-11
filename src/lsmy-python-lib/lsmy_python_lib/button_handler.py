@@ -1,6 +1,7 @@
 from datetime import timedelta
 import time
 import logging
+import threading
 import gpiod
 from gpiod.line import Direction, Edge, Bias, Value
 
@@ -15,55 +16,77 @@ log = logging.getLogger("button-handler")
 CHIP_PATH = '/dev/gpiochip0'
 BUTTON_PIN = 17
 
-def execute_full_reset(wifi_manager: WiFiModeManager):
-    log.warning("!!! STARTING FACTORY RESET !!!")
+class ResetButtonManager:
+    def __init__(self):
+        log.info("ResetButtonManager initialized")
+        self._stop_event = threading.Event()
 
-    # Clear WiFi configurations
-    reset_wifi_config()
-    # Disconnect WiFi
-    wifi_manager.cleanup_wifi()
 
-    log.info("Reset complete. WiFi disconnected and Config cleared.")
+    def start(self):
+        """
+        Start button handle reset
+        """
+        log.info("Reset button manager successfully started")
 
-def monitor_button_reset(wifi_manager: WiFiModeManager):
-    try:
-        line_settings = gpiod.LineSettings(
-            direction=Direction.INPUT,
-            edge_detection=Edge.FALLING,
-            bias=Bias.PULL_UP,
-            debounce_period=timedelta(milliseconds=50)
-        )
+    def stop(self):
+        """
+        Stop button handle thread
+        """
+        self._stop_event.set()
 
-        with gpiod.request_lines(
-            CHIP_PATH,
-            consumer="reset-button-monitor",
-            config={BUTTON_PIN: line_settings}
-        ) as request:
-            
-            press_start = 0
-            log.info(f"Button monitor active on GPIO {BUTTON_PIN} (gpiod)")
+    def execute_full_reset(self, wifi_manager: WiFiModeManager):
+        log.warning("!!! STARTING FACTORY RESET !!!")
 
-            while True:
-                if request.wait_edge_events():
-                    request.read_edge_events()
-                    
-                    press_start = time.time()
-                    log.info("Button Pressed")
+        # Clear WiFi configurations
+        reset_wifi_config()
+        # Disconnect WiFi
+        wifi_manager.cleanup_wifi()
 
-                    while True:
-                        current_state = request.get_value(BUTTON_PIN)
+        log.info("Reset complete. WiFi disconnected and Config cleared.")
 
-                        if current_state == Value.INACTIVE:
-                            time.sleep(0.1)
-                        else:
-                            final_duration = time.time() - press_start
-                            log.info(f"Button Released. Total duration: {final_duration:.2f}s")
-                            
-                            if final_duration >= 3.0:
-                                log.warning("Full reset triggered!")
-                                execute_full_reset(wifi_manager)
-                            
-                            break
+    def monitor_button_reset(self, wifi_manager: WiFiModeManager):
+        log.info("Starting Reset button thread...")
 
-    except Exception as e:
-        log.error(f"gpiod Monitor Error: {e}")
+        try:
+            line_settings = gpiod.LineSettings(
+                direction=Direction.INPUT,
+                edge_detection=Edge.FALLING,
+                bias=Bias.PULL_UP,
+                debounce_period=timedelta(milliseconds=50)
+            )
+
+            with gpiod.request_lines(
+                CHIP_PATH,
+                consumer="reset-button-monitor",
+                config={BUTTON_PIN: line_settings}
+            ) as request:
+                
+                press_start = 0
+                log.info(f"Button monitor active on GPIO {BUTTON_PIN} (gpiod)")
+
+                while not self._stop_event.is_set():
+                    if request.wait_edge_events():
+                        request.read_edge_events()
+                        
+                        press_start = time.time()
+                        log.info("Button Pressed")
+
+                        while not self._stop_event.is_set():
+                            current_state = request.get_value(BUTTON_PIN)
+
+                            if current_state == Value.INACTIVE:
+                                time.sleep(0.1)
+                            else:
+                                final_duration = time.time() - press_start
+                                log.info(f"Button Released. Total duration: {final_duration:.2f}s")
+                                
+                                if final_duration >= 3.0:
+                                    log.warning("Full reset triggered!")
+                                    self.execute_full_reset(wifi_manager)
+                                
+                                break
+
+                # Clean actions
+
+        except Exception as e:
+            log.error(f"gpiod Monitor Error: {e}")

@@ -52,11 +52,17 @@ from lsmy_python_lib.wifi_config_manager import update_wifi_connect_signal
 # ====== WEBSERVER LIBRARY ======
 from lsmy_webserver.manager import ProvisionWebserverManager
 
+# ====== CAMERA WATCHDOG LIBRARY ======
+from lsmy_python_lib.camera_watchdog_manager import CameraWatchdogManager
+
+# ====== CAMERA MANAGER LIBRARY ======
+from lsmy_python_lib.camera_manager import CameraManager
+
 # ====== IPC LIBRARY ======
-from lsmy_python_lib.ipc import ipc_server_task
+from lsmy_python_lib.ipc import start_ipc_thread, stop_ipc_thread, unlink_ipc_socket
 
 # ====== BUTTON RESET LIBRARY ======
-from lsmy_python_lib.button_handler import monitor_button_reset
+from lsmy_python_lib.button_handler import ResetButtonManager
 
 # ====== COMMAND RUNNER LIBRARY ======
 from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
@@ -111,10 +117,26 @@ class LsmyApplication:
     #-------- Constructor --------
     def __init__(self):
         self.state = AppState.INIT
-        # WifiModeManager
+        
+        # ------------ Application helpers manager group ------------
         self.wifi_manager = WiFiModeManager()
         self.wifi_config_manager = WiFiConfigManager()
+
+        # ------------ Application services manager group ------------
         self.provision_webserver_manager = ProvisionWebserverManager()
+        self.camera_watchdog_manager = CameraWatchdogManager()
+
+        # ------------ Application thread manager group ------------
+        self.reset_button_manager = ResetButtonManager()
+        self.camera_manager = CameraManager()
+
+        # ------------ Thread manager ------------
+        # IPC Server Thread
+        self.ipc_thread = threading.Thread(target=start_ipc_thread, daemon=True)
+        # Monitor Reset Button Thread
+        self.monitor_button_reset_thread = threading.Thread(target=self.reset_button_manager.monitor_button_reset, args=(self.wifi_manager,), daemon=True)
+        # Camera Main Process Thread
+        self.camera_main_process_thread = threading.Thread(target=self.camera_manager.camera_main_process, daemon=True)
 
         self.print_wifi_info = False
         self.running = False
@@ -135,7 +157,7 @@ class LsmyApplication:
         log.info("############################################")
 
         self._load_configuration()
-        self._initialize_services()
+        self._initialize_process()
 
         self.state = AppState.RUNNING
         self.running = True
@@ -148,7 +170,7 @@ class LsmyApplication:
         log.info("############################################")
 
         self.running = False
-        self._stop_services()
+        self._stop_process()
         self.state = AppState.STOPPED
 
         log.info("LSMY system shutdown completed")
@@ -158,24 +180,65 @@ class LsmyApplication:
         log.info("Loading system configuration")
         pass
 
-    def _initialize_services(self):
+    def _initialize_process(self):
+        log.info("Initializing core threads")
+        # IPC Server Thread
+        self.ipc_thread.start()
+        # Monitor Reset Button Thread
+        self.monitor_button_reset_thread.start()
+        # Camera Main Process Thread
+        self.camera_main_process_thread.start()
+
         log.info("Initializing core services")
         self._init_sensor_subsystem()
         self._init_ai_subsystem()
         self._init_communication_subsystem()
+        self._init_camera_watchdog_subsystem()
 
-    def _stop_services(self):
+    def _stop_process(self):
+        # ------------ Stopping core services ------------
         log.info("Stopping core services")
 
-        log.info("Stopping wifi mode services")
-        self.wifi_manager.cleanup_wifi()
         log.info("Stopping provision webserver services")
         self.provision_webserver_manager.stop()
 
+        log.info("Stopping camera watchdog services")
+        self.camera_watchdog_manager.stop()
+
+        log.info("Core services stopped")
+
+        # ------------ Stopping core threads ------------
+        log.info("Stopping core threads")
+
+        log.info("Stopping camera manager thread")
+        self.camera_manager.stop()
+        self.camera_main_process_thread.join()
+        log.info("Camera manager thread successfully stopped")
+
+        log.info("Stopping reset button manager thread")
+        self.reset_button_manager.stop()
+        self.monitor_button_reset_thread.join()
+        log.info("Reset button manager thread successfully stopped")
+
+        log.info("Stopping ipc manager thread")
+        stop_ipc_thread()
+        self.ipc_thread.join()
+        unlink_ipc_socket()
+        log.info("IPC thread successfully stopped")
+
+        log.info("Core threads stopped")
+
+        # ------------ Cleanning core helpers manager ------------
+        log.info("Clean core helpers manager")
+
+        log.info("Cleanning wifi manager")
+        self.wifi_manager.cleanup_wifi()
+
+        log.info("Core helpers cleanned")
+
+        # Final services stop
         log.info("Stopping network time synchronization services")
         run_cmd(["systemctl", "stop", "wpa_supplicant"], check=False)
-        
-        log.info("Core services stopped")
 
     # -------- Signals --------
     def _setup_signal_handlers(self):
@@ -189,14 +252,6 @@ class LsmyApplication:
     # -------- Main loop --------
     def _main_loop(self):
         log.info("========== ENTERING MAIN APPLICATION LOOP ==========")
-
-        # Monitor Reset Button Thread
-        monitor_button_reset_thread = threading.Thread(target=monitor_button_reset, args=(self.wifi_manager,), daemon=True)
-        monitor_button_reset_thread.start()
-
-        # IPC Server Thread
-        ipc_thread = threading.Thread(target=self.start_ipc_thread, daemon=True)
-        ipc_thread.start()
 
         while self.running:
             # Main logic connections here
@@ -283,12 +338,6 @@ class LsmyApplication:
 
         pass
 
-    # -------- Application Thread --------
-    def start_ipc_thread(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(ipc_server_task())
-
     # -------- Subsystems --------
     def _init_sensor_subsystem(self):
         log.info("Initializing sensor subsystem")
@@ -300,4 +349,10 @@ class LsmyApplication:
 
     def _init_communication_subsystem(self):
         log.info("Initializing communication subsystem")
+        pass
+
+    def _init_camera_watchdog_subsystem(self):
+        log.info("Initializing camera watchdog subsystem")
+
+        self.camera_watchdog_manager.start()
         pass

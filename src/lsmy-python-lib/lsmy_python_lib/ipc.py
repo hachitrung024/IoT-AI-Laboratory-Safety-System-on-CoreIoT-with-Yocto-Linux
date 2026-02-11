@@ -5,6 +5,7 @@ import logging
 import random
 
 from lsmy_python_lib.wifi_config_manager import update_wifi_connect_signal
+from lsmy_python_lib.camera_manager import update_camera_status
 
 log = logging.getLogger("ipc")
 
@@ -60,6 +61,14 @@ async def handle_client(reader, writer):
             update_wifi_connect_signal(status)
 
             log.info("Connect WiFi signal received: role=%s, status=%s", role, status)
+
+            resp = {"status": "ok"}
+        elif req.get("cmd") == "update_camera_status":
+            status = req.get("status", "INACTIVE")
+
+            update_camera_status(status)
+
+            log.info("Update camera status received: status=%s", status)
 
             resp = {"status": "ok"}
         else:
@@ -134,6 +143,24 @@ async def send_connect_wifi_signal_ipc(data: dict, timeout=3):
 
     return json.loads(resp.decode())
 
+async def send_update_camera_status_signal_ipc(data: dict, timeout=3):
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_unix_connection(SOCK),
+        timeout=timeout
+    )
+
+    msg = {
+        "cmd": "update_camera_status",
+        "status": data.get("status", "INACTIVE"),
+    }
+
+    writer.write((json.dumps(msg) + "\n").encode())
+    await writer.drain()
+
+    resp = await reader.readline()
+    writer.close()
+
+    return json.loads(resp.decode())
 
 async def ipc_server_task():
     if os.path.exists(SOCK):
@@ -149,4 +176,23 @@ async def ipc_server_task():
 
     async with server:
         await server.serve_forever()
+
+ipc_loop = None
+
+# -------- IPC Thread --------
+def start_ipc_thread():
+    global ipc_loop
+    ipc_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(ipc_loop)
+    ipc_loop.run_until_complete(ipc_server_task())
+
+def stop_ipc_thread():
+    global ipc_loop
+    if ipc_loop and ipc_loop.is_running():
+        ipc_loop.call_soon_threadsafe(ipc_loop.stop)
+
+def unlink_ipc_socket():
+    if os.path.exists(SOCK):
+        os.unlink(SOCK)
+        log.info("IPC Socket removed.")
 

@@ -5,6 +5,9 @@ import subprocess
 import time
 from typing import List, Dict
 
+# ====== GLOBAL STORE LIBRARY ======
+from lsmy_python_lib.global_store import Global_Store
+
 log = logging.getLogger("wifi-config")
 
 WPA_CONF = "/etc/wpa_supplicant.conf"
@@ -16,15 +19,13 @@ HEADER_LINES = [
     "country=VN",
 ]
 
-IS_HAVE_WIFI_CONNECT_SIGNAL = False
-
 class WiFiConfigManager:
     def __init__(self):
         log.info("WiFiConfigManager initialized")
 
     # Get is_have_wifi_connect signal
     def get_wifi_connect_signal(self) -> bool:
-        return IS_HAVE_WIFI_CONNECT_SIGNAL
+        return Global_Store.get("is_have_wifi_connect_signal")
 
     # Load WiFi configurations function
     def load_wifi_configs(self, config_path: str = WPA_CONF) -> List[Dict]:
@@ -116,8 +117,7 @@ class WiFiConfigManager:
 
 # Update is_have_wifi_connect signal
 def update_wifi_connect_signal(value: bool):
-    global IS_HAVE_WIFI_CONNECT_SIGNAL
-    IS_HAVE_WIFI_CONNECT_SIGNAL = value
+    Global_Store.set("is_have_wifi_connect_signal", value)
     # log.info("WiFi config signal updated: %s", IS_HAVE_WIFI_CONNECT_SIGNAL)
 
 # Configure WiFi function
