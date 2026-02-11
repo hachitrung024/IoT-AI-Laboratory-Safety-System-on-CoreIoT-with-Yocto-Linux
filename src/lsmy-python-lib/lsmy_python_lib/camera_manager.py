@@ -40,8 +40,8 @@ class CameraManager:
         log.info("Starting Camera main process thread...")
         update_camera_status("RUNNING")
 
+        camera_status = ""
         while True:
-            camera_status = ""
             while not self._stop_event.is_set():
                 try:
                     camera_status = get_camera_status()
@@ -78,6 +78,7 @@ class CameraManager:
             except Exception as e:
                 log.error(f"Error while stopping camera pipeline: {e}")
             
+            camera_status = get_camera_status()
             if(camera_status == "STOPPED"):
                 break
             elif(camera_status == "RESTARTING"):
