@@ -106,14 +106,21 @@ async def main():
         healthy = check_camera_health()
 
         if not is_retry:
-            break
+            log.warning("Recovery failed, but watchdog still running...")
+
+            if healthy:
+                log.warning("Camera healthy, back to watchdog...")
+                is_retry = True
+            
+            await asyncio.sleep(CHECK_INTERVAL)
+            continue
 
         if not healthy:
             log.error(f"Camera unhealthy, try to restart camera pipeline...")
             is_retry = await recover_camera()
             inactive_duration = 0
 
-        time.sleep(CHECK_INTERVAL)
+        await asyncio.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
     asyncio.run(main())
