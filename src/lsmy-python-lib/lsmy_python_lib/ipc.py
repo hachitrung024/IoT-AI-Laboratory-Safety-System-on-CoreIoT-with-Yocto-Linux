@@ -168,7 +168,12 @@ async def send_update_camera_status_signal_ipc(data: dict, timeout=3):
 
     return json.loads(resp.decode())
 
+ipc_loop = None
+ipc_stop_event = None
+
 async def ipc_server_task():
+    global ipc_stop_event
+
     if os.path.exists(SOCK):
         os.unlink(SOCK)
 
@@ -181,21 +186,20 @@ async def ipc_server_task():
     log.info("IPC server listening on %s", SOCK)
 
     async with server:
-        await server.serve_forever()
-
-ipc_loop = None
+        await ipc_stop_event.wait()
 
 # -------- IPC Thread --------
 def start_ipc_thread():
-    global ipc_loop
+    global ipc_loop, ipc_stop_event
     ipc_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(ipc_loop)
+    ipc_stop_event = asyncio.Event()
     ipc_loop.run_until_complete(ipc_server_task())
 
 def stop_ipc_thread():
-    global ipc_loop
-    if ipc_loop and ipc_loop.is_running():
-        ipc_loop.call_soon_threadsafe(ipc_loop.stop)
+    global ipc_loop, ipc_stop_event
+    if ipc_loop and ipc_stop_event:
+        ipc_loop.call_soon_threadsafe(ipc_stop_event.set)
 
 def unlink_ipc_socket():
     if os.path.exists(SOCK):
