@@ -3,6 +3,14 @@ import logging
 
 log = logging.getLogger("global-store")
 
+# Global Store to maintain application-wide state
+# =========== Value Definitions ===========
+# "wifi_status": str - Current WiFi connection status ("CONNECTED", "DISCONNECTED", etc.)
+# "is_ap_mode": bool - Whether the device is in Access Point mode
+# "is_sta_mode": bool - Whether the device is in Station mode
+# "is_have_wifi_connect_signal": bool - Whether is have request to connect WiFi
+# "camera_status": str - Whether the camera is running properly ("INACTIVE", "RUNNING", "RESTARTING" ,"STOPPED", etc.)
+
 class GlobalStore:
     def __init__(self):
         self._lock = threading.Lock()
@@ -11,6 +19,8 @@ class GlobalStore:
             "wifi_status": "DISCONNECTED",
             "is_ap_mode": False,
             "is_sta_mode": True,
+            "is_have_wifi_connect_signal": False,
+            "camera_status": "INACTIVE",
         }
 
     def set(self, key, value):
