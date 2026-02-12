@@ -31,7 +31,7 @@ class ProvisionWebserverManager:
         """
         Start provisioning UI + backend
         """
-        log.info("========== STARTING PROVISIONING WEBSERVER ==========")
+        log.info("========== STARTING PROVISIONING WEBSERVER SERVICES ==========")
         run_cmd_with_retry(
             ["systemctl", "start", self.FRONTEND_SERVICE]
         )
@@ -47,7 +47,7 @@ class ProvisionWebserverManager:
         """
         Stop provisioning UI + backend
         """
-        log.info("========== STOPPING PROVISIONING WEBSERVER ==========")
+        log.info("========== STOPPING PROVISIONING WEBSERVER SERVICES ==========")
         run_cmd(
             ["systemctl", "stop", self.BACKEND_SERVICE],
             check=False,
@@ -59,7 +59,7 @@ class ProvisionWebserverManager:
         log.info("Provisioning webserver successfully stopped")
 
     def restart(self):
-        log.info("========== RESTARTING PROVISIONING WEBSERVER ==========")
+        log.info("========== RESTARTING PROVISIONING WEBSERVER SERVICES ==========")
         run_cmd_with_retry(
             ["systemctl", "restart", self.FRONTEND_SERVICE]
         )

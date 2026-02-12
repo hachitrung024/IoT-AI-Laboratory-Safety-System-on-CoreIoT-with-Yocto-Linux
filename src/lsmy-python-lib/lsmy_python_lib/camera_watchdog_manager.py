@@ -29,7 +29,7 @@ class CameraWatchdogManager:
         """
         Start camera watchdog service
         """
-        log.info("========== STARTING CAMERA WATCHDOG ==========")
+        log.info("========== STARTING CAMERA WATCHDOG SERVICES ==========")
         run_cmd_with_retry(
             ["systemctl", "start", self.CAMERA_WATCHDOG_SERVICE]
         )
@@ -42,7 +42,7 @@ class CameraWatchdogManager:
         """
         Stop camera watchdog service
         """
-        log.info("========== STOPPING CAMERA WATCHDOG ==========")
+        log.info("========== STOPPING CAMERA WATCHDOG SERVICES ==========")
         run_cmd(
             ["systemctl", "stop", self.CAMERA_WATCHDOG_SERVICE],
             check=False,
@@ -51,7 +51,7 @@ class CameraWatchdogManager:
         log.info("Camera watchdog service successfully stopped")
         
     def restart(self):
-        log.info("========== RESTARTING CAMERA WATCHDOG ==========")
+        log.info("========== RESTARTING CAMERA WATCHDOG SERVICES ==========")
         run_cmd_with_retry(
             ["systemctl", "restart", self.CAMERA_WATCHDOG_SERVICE]
         )

@@ -32,6 +32,7 @@ class ResetButtonManager:
         """
         Stop button handle thread
         """
+        log.info("========== STOPPING RESET BUTTON MONITOR THREAD ==========")
         self._stop_event.set()
 
     def execute_full_reset(self, wifi_manager: WiFiModeManager):
@@ -45,7 +46,7 @@ class ResetButtonManager:
         log.info("Reset complete. WiFi disconnected and Config cleared.")
 
     def monitor_button_reset(self, wifi_manager: WiFiModeManager):
-        log.info("Starting Reset button thread...")
+        log.info("========== STARTING RESET BUTTON MONITOR THREAD ==========")
 
         try:
             line_settings = gpiod.LineSettings(

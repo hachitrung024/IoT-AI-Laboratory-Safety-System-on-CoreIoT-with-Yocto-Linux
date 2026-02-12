@@ -33,11 +33,12 @@ class CameraManager:
         """
         Stop camera manager thread
         """
+        log.info("========== STOPPING CAMERA MAIN PROCESS THREAD ==========")
         update_camera_status("STOPPED")
         self._stop_event.set()
 
     def camera_main_process(self):
-        log.info("Starting Camera main process thread...")
+        log.info("========== STARTING CAMERA MAIN PROCESS THREAD ==========")
         update_camera_status("INACTIVE")
 
         camera_status = ""

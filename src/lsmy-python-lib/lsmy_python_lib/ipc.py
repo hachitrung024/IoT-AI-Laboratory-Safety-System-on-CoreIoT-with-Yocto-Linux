@@ -178,6 +178,7 @@ ipc_loop = None
 ipc_stop_event = None
 
 async def ipc_server_task():
+    log.info("========== STARTING IPC SERVER THREAD ==========")
     global ipc_stop_event
 
     if os.path.exists(SOCK):
@@ -203,6 +204,7 @@ def start_ipc_thread():
     ipc_loop.run_until_complete(ipc_server_task())
 
 def stop_ipc_thread():
+    log.info("========== STOPPING IPC SERVER THREAD ==========")
     global ipc_loop, ipc_stop_event
     if ipc_loop and ipc_stop_event:
         ipc_loop.call_soon_threadsafe(ipc_stop_event.set)

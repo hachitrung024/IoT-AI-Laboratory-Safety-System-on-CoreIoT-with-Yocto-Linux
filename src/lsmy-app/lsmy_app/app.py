@@ -181,7 +181,7 @@ class LsmyApplication:
         pass
 
     def _initialize_process(self):
-        log.info("Initializing core threads")
+        log.info("--------> Initializing core threads")
         # IPC Server Thread
         self.ipc_thread.start()
         # Monitor Reset Button Thread
@@ -189,7 +189,7 @@ class LsmyApplication:
         # Camera Main Process Thread
         self.camera_main_process_thread.start()
 
-        log.info("Initializing core services")
+        log.info("--------> Initializing core services")
         self._init_sensor_subsystem()
         self._init_ai_subsystem()
         self._init_communication_subsystem()
@@ -197,44 +197,38 @@ class LsmyApplication:
 
     def _stop_process(self):
         # ------------ Stopping core services ------------
-        log.info("Stopping core services")
+        log.info("--------> Stopping core services")
 
-        log.info("Stopping provision webserver services")
         self.provision_webserver_manager.stop()
 
-        log.info("Stopping camera watchdog services")
         self.camera_watchdog_manager.stop()
 
-        log.info("Core services stopped")
+        log.info("--------> Core services stopped")
 
         # ------------ Stopping core threads ------------
-        log.info("Stopping core threads")
+        log.info("--------> Stopping core threads")
 
-        log.info("Stopping camera manager thread")
         self.camera_manager.stop()
         self.camera_main_process_thread.join()
         log.info("Camera manager thread successfully stopped")
 
-        log.info("Stopping reset button manager thread")
         self.reset_button_manager.stop()
         self.monitor_button_reset_thread.join()
         log.info("Reset button manager thread successfully stopped")
 
-        log.info("Stopping ipc manager thread")
         stop_ipc_thread()
         self.ipc_thread.join()
         unlink_ipc_socket()
         log.info("IPC thread successfully stopped")
 
-        log.info("Core threads stopped")
+        log.info("--------> Core threads stopped")
 
         # ------------ Cleanning core helpers manager ------------
-        log.info("Clean core helpers manager")
+        log.info("--------> Cleanning core helpers manager")
 
-        log.info("Cleanning wifi manager")
         self.wifi_manager.cleanup_wifi()
 
-        log.info("Core helpers cleanned")
+        log.info("--------> Core helpers cleanned")
 
         # Final services stop
         log.info("Stopping network time synchronization services")
