@@ -80,7 +80,7 @@ async def recover_camera():
         if resq.get("status") == "ok":
             retries_count = resq["data"]["retries_count"]
 
-            if retries_count < (MAX_RECOVER_TRIES - 1):
+            if retries_count < MAX_RECOVER_TRIES:
                 is_retry = True
             else:
                 is_retry = False
@@ -109,9 +109,13 @@ async def main():
             log.warning("Recovery failed, but watchdog still running...")
 
             if healthy:
-                log.warning("Camera healthy, back to watchdog...")
+                log.warning("Camera recovered, try to start camera pipeline...")
                 is_retry = True
-            
+                data = {
+                    "status": "RUNNING" 
+                }
+                await send_update_camera_status_signal_ipc(data)
+
             await asyncio.sleep(CHECK_INTERVAL)
             continue
 

@@ -7,7 +7,7 @@ import random
 from lsmy_python_lib.camera_manager import get_retries_count
 
 from lsmy_python_lib.wifi_config_manager import update_wifi_connect_signal
-from lsmy_python_lib.camera_manager import update_camera_status
+from lsmy_python_lib.camera_manager import update_camera_status, MAX_RECOVER_TRIES
 
 log = logging.getLogger("ipc")
 
@@ -68,15 +68,21 @@ async def handle_client(reader, writer):
         elif req.get("cmd") == "update_camera_status":
             status = req.get("status", "INACTIVE")
 
-            update_camera_status(status)
+            if status == "RESTARTING":
+                retries_count = get_retries_count()
+                if retries_count < MAX_RECOVER_TRIES:
+                    update_camera_status(status)
 
-            log.info("Update camera status received: status=%s", status)
+                data = {
+                    "retries_count": retries_count,
+                }
+                resp = {"status": "ok", "data": data}
+            else:
+                update_camera_status(status)
 
-            data = {
-                "retries_count": get_retries_count(),
-            }
+                log.info("Update camera status received: status=%s", status)
 
-            resp = {"status": "ok", "data": data}
+                resp = {"status": "ok"}
         else:
             resp = {"status": "error", "error": "Unknown command"}
 

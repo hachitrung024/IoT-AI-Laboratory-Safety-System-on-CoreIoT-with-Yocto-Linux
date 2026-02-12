@@ -38,32 +38,39 @@ class CameraManager:
 
     def camera_main_process(self):
         log.info("Starting Camera main process thread...")
-        update_camera_status("RUNNING")
+        update_camera_status("INACTIVE")
 
         camera_status = ""
         while True:
             while not self._stop_event.is_set():
                 try:
                     camera_status = get_camera_status()
-                    retries_count = get_retries_count()
 
-                    if(camera_status == "STOPPED"):
+                    if(camera_status == "INACTIVE"):
+                        self._stop_event.wait(5)
+                        # TODO: start pipeline, clean actions
+                    elif(camera_status == "RUNNING"):
+                        update_retries_count(0)
+                        self._stop_event.wait(5)
+                        # TODO: start streaming
+                    elif(camera_status == "STOPPED"):
                         self._stop_event.set()
-                        break
+                        continue
                     elif(camera_status == "RESTARTING"):
+                        retries_count = get_retries_count()
                         if retries_count < self._max_recover_retries:
                             self._stop_event.set()
                             retries_count = retries_count + 1
+                            update_retries_count(retries_count)
                         else:
-                            retries_count = 0
-                            update_camera_status("STOPPED")
-
-                        update_retries_count(retries_count)
-                        continue
-                    else:
+                            update_camera_status("INACTIVE")
+                            self._stop_event.set()
                         self._stop_event.wait(5)
-                        continue
-                    # self._stop_event.wait(1)
+                    else:
+                        log.info(f"Camera status unknown: {camera_status}")
+                        update_camera_status("INACTIVE")
+                        self._stop_event.set()
+                        self._stop_event.wait(5)
 
                 except Exception as e:
                     log.error(f"Camera main process encountered an error: {e}")
@@ -81,10 +88,10 @@ class CameraManager:
             camera_status = get_camera_status()
             if(camera_status == "STOPPED"):
                 break
-            elif(camera_status == "RESTARTING"):
+            elif(camera_status == "RESTARTING" or camera_status == "INACTIVE"):
                 self._stop_event.clear()
 
-        update_camera_status("STOPPED")
+        log.info("Camera stopped running process!!!")
 
 # Update camera_status
 def update_camera_status(value: str):
