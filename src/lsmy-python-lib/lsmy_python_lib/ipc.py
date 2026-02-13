@@ -178,7 +178,6 @@ ipc_loop = None
 ipc_stop_event = None
 
 async def ipc_server_task():
-    log.info("========== STARTING IPC SERVER THREAD ==========")
     global ipc_stop_event
 
     if os.path.exists(SOCK):
@@ -197,6 +196,7 @@ async def ipc_server_task():
 
 # -------- IPC Thread --------
 def start_ipc_thread():
+    log.info("========== STARTING IPC SERVER THREAD ==========")
     global ipc_loop, ipc_stop_event
     ipc_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(ipc_loop)
