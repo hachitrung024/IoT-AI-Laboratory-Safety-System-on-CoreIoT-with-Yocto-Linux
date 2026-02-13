@@ -238,6 +238,7 @@ class LsmyApplication:
         # Final services stop
         log.info("Stopping network time synchronization services")
         run_cmd(["systemctl", "stop", "wpa_supplicant"], check=False)
+        log.info("Network time synchronization services successfully stopped")
 
     # -------- Signals --------
     def _setup_signal_handlers(self):
