@@ -184,16 +184,21 @@ class LsmyApplication:
         log.info("--------> Initializing core threads")
         # IPC Server Thread
         self.ipc_thread.start()
+        log.info("IPC server thread successfully started")
         # Monitor Reset Button Thread
         self.monitor_button_reset_thread.start()
+        log.info("Reset button monitor thread successfully started")
         # Camera Main Process Thread
         self.camera_main_process_thread.start()
+        log.info("Camera main process thread successfully started")
+        log.info("--------> Core threads initialized")
 
         log.info("--------> Initializing core services")
         self._init_sensor_subsystem()
         self._init_ai_subsystem()
         self._init_communication_subsystem()
         self._init_camera_watchdog_subsystem()
+        log.info("--------> Core services initialized")
 
     def _stop_process(self):
         # ------------ Stopping core services ------------
