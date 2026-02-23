@@ -1,4 +1,5 @@
 import threading
+import multiprocessing
 import time
 import sys
 
@@ -28,3 +29,17 @@ print(f"Time multi thread: {time.time() - start:.2f}s")
 # Check is disable GIL (Python 3.13+)
 status = getattr(sys, '_is_gil_enabled', lambda: "Unknown")
 print(f"Status GIL: {status()}")
+
+if __name__ == "__main__":
+    # Multi-process
+    p1 = multiprocessing.Process(target=count_heavy, args=(COUNT,))
+    p2 = multiprocessing.Process(target=count_heavy, args=(COUNT,))
+
+    start = time.time()
+    p1.start()
+    p2.start()
+    p1.join()
+    p2.join()
+    print(f"Time multi-process: {time.time() - start:.2f}s")
+
+    print(f"Number of cores: {multiprocessing.cpu_count()}")
