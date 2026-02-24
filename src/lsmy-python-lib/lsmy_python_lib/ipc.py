@@ -3,6 +3,9 @@ import json
 import asyncio
 import logging
 import random
+import multiprocessing
+
+from lsmy_python_lib.global_store import GlobalStore
 
 from lsmy_python_lib.camera_manager import get_retries_count
 
@@ -21,6 +24,8 @@ LAST_TELEMETRY = {
     "pm25": 0.0,
 }
 
+GLOBAL_STORE = None
+
 async def handle_client(reader, writer):
     try:
         data = await reader.readline()
@@ -29,6 +34,8 @@ async def handle_client(reader, writer):
 
         req = json.loads(data.decode())
         log.info("IPC RX: %s", req)
+
+        global GLOBAL_STORE
 
         if req.get("cmd") == "send_telemetry":
             telemetry = {
@@ -60,7 +67,7 @@ async def handle_client(reader, writer):
             role = req.get("role", "hardware")
             status = req.get("status", False)
 
-            update_wifi_connect_signal(status)
+            update_wifi_connect_signal(GLOBAL_STORE, status)
 
             log.info("Connect WiFi signal received: role=%s, status=%s", role, status)
 
@@ -69,16 +76,16 @@ async def handle_client(reader, writer):
             status = req.get("status", "INACTIVE")
 
             if status == "RESTARTING":
-                retries_count = get_retries_count()
+                retries_count = get_retries_count(GLOBAL_STORE)
                 if retries_count < MAX_RECOVER_TRIES:
-                    update_camera_status(status)
+                    update_camera_status(GLOBAL_STORE, status)
 
                 data = {
                     "retries_count": retries_count,
                 }
                 resp = {"status": "ok", "data": data}
             else:
-                update_camera_status(status)
+                update_camera_status(GLOBAL_STORE, status)
 
                 log.info("Update camera status received: status=%s", status)
 
@@ -194,20 +201,36 @@ async def ipc_server_task():
     async with server:
         await ipc_stop_event.wait()
 
-# -------- IPC Thread --------
-def start_ipc_thread():
-    log.info("========== STARTING IPC SERVER THREAD ==========")
-    global ipc_loop, ipc_stop_event
+# -------- IPC Process --------
+def start_ipc_process(global_store: GlobalStore, stop_signal):
+    log.info("========== STARTING IPC SERVER PROCESS ==========")
+    global ipc_loop, ipc_stop_event, GLOBAL_STORE
+    GLOBAL_STORE = global_store
+
     ipc_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(ipc_loop)
-    ipc_stop_event = asyncio.Event()
-    ipc_loop.run_until_complete(ipc_server_task())
 
-def stop_ipc_thread():
-    log.info("========== STOPPING IPC SERVER THREAD ==========")
-    global ipc_loop, ipc_stop_event
-    if ipc_loop and ipc_stop_event:
-        ipc_loop.call_soon_threadsafe(ipc_stop_event.set)
+    ipc_stop_event = asyncio.Event()
+
+    async def watch_stop_signal():
+        while not stop_signal.is_set():
+            await asyncio.sleep(0.5) 
+        
+        log.info("IPC Process received stop signal from Main Process")
+        ipc_stop_event.set()
+
+    try:
+        ipc_loop.create_task(watch_stop_signal())
+        ipc_loop.run_until_complete(ipc_server_task())
+    finally:
+        ipc_loop.close()
+        unlink_ipc_socket()
+
+def stop_ipc_process(ipc_process, ipc_stop_signal):
+    log.info("========== STOPPING IPC SERVER PROCESS ==========")
+
+    if ipc_process.is_alive():
+        ipc_stop_signal.set()
 
 def unlink_ipc_socket():
     if os.path.exists(SOCK):

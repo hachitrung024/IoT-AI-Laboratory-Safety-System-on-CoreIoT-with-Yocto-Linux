@@ -1,9 +1,9 @@
 import time
 import logging
-import threading
+import multiprocessing
 
 # ====== GLOBAL STORE LIBRARY ======
-from lsmy_python_lib.global_store import Global_Store
+from lsmy_python_lib.global_store import GlobalStore
 
 log = logging.getLogger("camera-manager")
 
@@ -14,62 +14,63 @@ class CameraManager:
     Camera Manager to monitor and restart camera
     """
 
-    def __init__(self, device_id=0):
+    def __init__(self, global_store, stop_signal, device_id=0):
         log.info("CameraManager initialized")
+        self.global_store = global_store
         self.device_id = device_id
         self._max_recover_retries = MAX_RECOVER_TRIES
-        self._stop_event = threading.Event()
+        self._stop_event = stop_signal
 
-        update_camera_status("INACTIVE")
+        update_camera_status(self.global_store,"INACTIVE")
 
 
     def start(self):
         """
-        Start camera manager thread
+        Start camera manager process
         """
         log.info("Camera manager successfully started")
 
     def stop(self):
         """
-        Stop camera manager thread
+        Stop camera manager process
         """
-        log.info("========== STOPPING CAMERA MAIN PROCESS THREAD ==========")
-        update_camera_status("STOPPED")
+        log.info("========== STOPPING CAMERA MAIN PROCESS PROCESS ==========")
+        update_camera_status(self.global_store,"STOPPED")
         self._stop_event.set()
 
     def camera_main_process(self):
-        log.info("========== STARTING CAMERA MAIN PROCESS THREAD ==========")
-        update_camera_status("INACTIVE")
+        log.info("========== STARTING CAMERA MAIN PROCESS PROCESS ==========")
+        update_camera_status(self.global_store,"INACTIVE")
 
         camera_status = ""
         while True:
             while not self._stop_event.is_set():
                 try:
-                    camera_status = get_camera_status()
+                    camera_status = get_camera_status(self.global_store)
 
                     if(camera_status == "INACTIVE"):
                         self._stop_event.wait(5)
                         # TODO: start pipeline, clean actions
                     elif(camera_status == "RUNNING"):
-                        update_retries_count(0)
+                        update_retries_count(self.global_store,0)
                         self._stop_event.wait(5)
                         # TODO: start streaming
                     elif(camera_status == "STOPPED"):
                         self._stop_event.set()
                         continue
                     elif(camera_status == "RESTARTING"):
-                        retries_count = get_retries_count()
+                        retries_count = get_retries_count(self.global_store)
                         if retries_count < self._max_recover_retries:
                             self._stop_event.set()
                             retries_count = retries_count + 1
-                            update_retries_count(retries_count)
+                            update_retries_count(self.global_store,retries_count)
                         else:
-                            update_camera_status("INACTIVE")
+                            update_camera_status(self.global_store,"INACTIVE")
                             self._stop_event.set()
                         self._stop_event.wait(5)
                     else:
                         log.info(f"Camera status unknown: {camera_status}")
-                        update_camera_status("INACTIVE")
+                        update_camera_status(self.global_store,"INACTIVE")
                         self._stop_event.set()
                         self._stop_event.wait(5)
 
@@ -86,7 +87,7 @@ class CameraManager:
             except Exception as e:
                 log.error(f"Error while stopping camera pipeline: {e}")
             
-            camera_status = get_camera_status()
+            camera_status = get_camera_status(self.global_store)
             if(camera_status == "STOPPED"):
                 break
             elif(camera_status == "RESTARTING" or camera_status == "INACTIVE"):
@@ -95,18 +96,18 @@ class CameraManager:
         log.info("Camera stopped running process!!!")
 
 # Update camera_status
-def update_camera_status(value: str):
-    Global_Store.set("camera_status", value)
+def update_camera_status(global_store: GlobalStore, value: str):
+    global_store.set("camera_status", value)
 
 # Get camera_status
-def get_camera_status():
-    return Global_Store.get("camera_status")
+def get_camera_status(global_store: GlobalStore):
+    return global_store.get("camera_status")
 
 # Update retries_count
-def update_retries_count(value: int):
-    Global_Store.set("retries_count", value)
+def update_retries_count(global_store: GlobalStore, value: int):
+    global_store.set("retries_count", value)
     
 # Get retries_count
-def get_retries_count():
-    return Global_Store.get("retries_count")
+def get_retries_count(global_store: GlobalStore):
+    return global_store.get("retries_count")
         

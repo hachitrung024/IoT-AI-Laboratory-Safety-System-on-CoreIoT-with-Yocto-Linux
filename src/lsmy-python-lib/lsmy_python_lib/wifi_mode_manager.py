@@ -7,7 +7,7 @@ from enum import Enum
 from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
 
 # ====== GLOBAL STORE LIBRARY ======
-from lsmy_python_lib.global_store import Global_Store
+from lsmy_python_lib.global_store import GlobalStore
 
 log = logging.getLogger("wifi-mode")
 
@@ -22,8 +22,9 @@ class WiFiMode(Enum):
 
 
 class WiFiModeManager:
-    def __init__(self):
+    def __init__(self, global_store):
         self.mode = WiFiMode.STA
+        self.global_store = global_store
         log.info("WiFiModeManager initialized with mode=%s", self.mode.value)
 
     def _link_network(self, target: str):
@@ -54,7 +55,7 @@ class WiFiModeManager:
 
     def switch_to_ap(self):
         log.info("========== SWITCH TO AP MODE ==========")
-        self.mode = WiFiMode.AP
+        # self.mode = WiFiMode.AP
 
         self._link_network(AP_NETWORK_FILE)
         self._restart_networkd()
@@ -66,13 +67,13 @@ class WiFiModeManager:
 
         log.info("AP mode enabled")
 
-        Global_Store.set("wifi_status", "DISCONNECTED")
-        Global_Store.set("is_ap_mode", True)
-        Global_Store.set("is_sta_mode", False)
+        self.global_store.set("wifi_status", "DISCONNECTED")
+        self.global_store.set("is_ap_mode", True)
+        self.global_store.set("is_sta_mode", False)
 
     def switch_to_sta(self):
         log.info("========== SWITCH TO STA MODE ==========")
-        self.mode = WiFiMode.STA
+        # self.mode = WiFiMode.STA
 
         self._link_network(STA_NETWORK_FILE)
         self._restart_networkd()
@@ -83,9 +84,9 @@ class WiFiModeManager:
 
         log.info("STA mode enabled")
 
-        Global_Store.set("wifi_status", "DISCONNECTED")
-        Global_Store.set("is_ap_mode", False)
-        Global_Store.set("is_sta_mode", True)
+        self.global_store.set("wifi_status", "DISCONNECTED")
+        self.global_store.set("is_ap_mode", False)
+        self.global_store.set("is_sta_mode", True)
 
     def start_sta_services(self):
         log.info("Starting STA services...")
@@ -107,12 +108,12 @@ class WiFiModeManager:
         # Restart network stack
         self._restart_networkd()
 
-        self.mode = WiFiMode.STA
+        # self.mode = WiFiMode.STA
         log.info("WiFi state cleaned, system returned to STA baseline")
 
-        Global_Store.set("wifi_status", "DISCONNECTED")
-        Global_Store.set("is_ap_mode", False)
-        Global_Store.set("is_sta_mode", True)
+        self.global_store.set("wifi_status", "DISCONNECTED")
+        self.global_store.set("is_ap_mode", False)
+        self.global_store.set("is_sta_mode", True)
 
     # Get current WiFi role
     def get_wifi_role(self, iface: str = "wlan0") -> str:

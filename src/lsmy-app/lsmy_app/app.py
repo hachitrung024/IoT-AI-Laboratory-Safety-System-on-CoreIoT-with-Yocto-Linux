@@ -9,7 +9,7 @@
 #   - Run the primary control loop
 #   - Orchestrate system components (sensors, AI, core services)
 #   - Interface with native C libraries
-#   - Manage threads, tasks, and internal state
+#   - Manage threads, process, tasks, and internal state
 #   - Handle application-level errors and graceful shutdown
 #
 #  Invocation:
@@ -25,7 +25,7 @@
 
 import asyncio
 import sys
-import threading
+import multiprocessing
 import time
 import signal
 import ctypes
@@ -59,7 +59,7 @@ from lsmy_python_lib.camera_watchdog_manager import CameraWatchdogManager
 from lsmy_python_lib.camera_manager import CameraManager
 
 # ====== IPC LIBRARY ======
-from lsmy_python_lib.ipc import start_ipc_thread, stop_ipc_thread, unlink_ipc_socket
+from lsmy_python_lib.ipc import start_ipc_process, stop_ipc_process, unlink_ipc_socket
 
 # ====== BUTTON RESET LIBRARY ======
 from lsmy_python_lib.button_handler import ResetButtonManager
@@ -68,7 +68,7 @@ from lsmy_python_lib.button_handler import ResetButtonManager
 from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
 
 # ====== GLOBAL STORE LIBRARY ======
-from lsmy_python_lib.global_store import Global_Store
+from lsmy_python_lib.global_store import GlobalStore, create_global_store
 
 # ====== ANOTHER LIBRARY ======
 # Additional Python library imports can go here
@@ -117,26 +117,35 @@ class LsmyApplication:
     #-------- Constructor --------
     def __init__(self):
         self.state = AppState.INIT
+
+        # ------------ Global store manager ------------
+        global_store, global_store_manager = create_global_store()
+        self.global_store = global_store
+        self.global_store_manager = global_store_manager
         
         # ------------ Application helpers manager group ------------
-        self.wifi_manager = WiFiModeManager()
-        self.wifi_config_manager = WiFiConfigManager()
+        self.wifi_manager = WiFiModeManager(global_store=self.global_store)
+        self.wifi_config_manager = WiFiConfigManager(global_store=self.global_store)
 
         # ------------ Application services manager group ------------
         self.provision_webserver_manager = ProvisionWebserverManager()
         self.camera_watchdog_manager = CameraWatchdogManager()
 
-        # ------------ Application thread manager group ------------
-        self.reset_button_manager = ResetButtonManager()
-        self.camera_manager = CameraManager()
+        # ------------ Application processes manager group ------------
+        self.ipc_stop_signal = multiprocessing.Event()
+        self.monitor_button_reset_stop_signal = multiprocessing.Event()
+        self.camera_main_stop_signal = multiprocessing.Event()
 
-        # ------------ Thread manager ------------
-        # IPC Server Thread
-        self.ipc_thread = threading.Thread(target=start_ipc_thread, daemon=True)
-        # Monitor Reset Button Thread
-        self.monitor_button_reset_thread = threading.Thread(target=self.reset_button_manager.monitor_button_reset, args=(self.wifi_manager,), daemon=True)
-        # Camera Main Process Thread
-        self.camera_main_process_thread = threading.Thread(target=self.camera_manager.camera_main_process, daemon=True)
+        self.reset_button_manager = ResetButtonManager(stop_signal=self.monitor_button_reset_stop_signal)
+        self.camera_manager = CameraManager(global_store=self.global_store, stop_signal=self.camera_main_stop_signal)
+
+        # ------------ Process manager ------------
+        # IPC Server Process
+        self.ipc_process = multiprocessing.Process(target=start_ipc_process, args=(self.global_store, self.ipc_stop_signal), daemon=True)
+        # Monitor Reset Button Process
+        self.monitor_button_reset_process = multiprocessing.Process(target=self.reset_button_manager.monitor_button_reset, args=(self.wifi_manager,), daemon=True)
+        # Camera Main Process
+        self.camera_main_process = multiprocessing.Process(target=self.camera_manager.camera_main_process, daemon=True)
 
         self.print_wifi_info = False
         self.running = False
@@ -181,17 +190,17 @@ class LsmyApplication:
         pass
 
     def _initialize_process(self):
-        log.info("--------> Initializing core threads")
-        # IPC Server Thread
-        self.ipc_thread.start()
-        log.info("IPC server thread successfully started")
-        # Monitor Reset Button Thread
-        self.monitor_button_reset_thread.start()
-        log.info("Reset button monitor thread successfully started")
-        # Camera Main Process Thread
-        self.camera_main_process_thread.start()
-        log.info("Camera main process thread successfully started")
-        log.info("--------> Core threads initialized")
+        log.info("--------> Initializing core processes")
+        # IPC Server Process
+        self.ipc_process.start()
+        log.info("IPC server process successfully started")
+        # Monitor Reset Button Process
+        self.monitor_button_reset_process.start()
+        log.info("Reset button monitor process successfully started")
+        # Camera Main Process
+        self.camera_main_process.start()
+        log.info("Camera main process successfully started")
+        log.info("--------> Core processes initialized")
 
         log.info("--------> Initializing core services")
         self._init_sensor_subsystem()
@@ -210,23 +219,34 @@ class LsmyApplication:
 
         log.info("--------> Core services stopped")
 
-        # ------------ Stopping core threads ------------
-        log.info("--------> Stopping core threads")
+        # ------------ Stopping core processes ------------
+        log.info("--------> Stopping core processes")
 
         self.camera_manager.stop()
-        self.camera_main_process_thread.join()
-        log.info("Camera manager thread successfully stopped")
+        self.camera_main_process.join(timeout=5)
+        if self.camera_main_process.is_alive():
+            log.warning("Camera process force terminating...")
+            self.camera_main_process.terminate()
+            self.camera_main_process.join()
+        log.info("Camera manager process successfully stopped")
 
         self.reset_button_manager.stop()
-        self.monitor_button_reset_thread.join()
-        log.info("Reset button manager thread successfully stopped")
+        self.monitor_button_reset_process.join(timeout=5)
+        if self.monitor_button_reset_process.is_alive():
+            log.warning("Reset button process force terminating...")
+            self.monitor_button_reset_process.terminate()
+            self.monitor_button_reset_process.join()
+        log.info("Reset button manager process successfully stopped")
 
-        stop_ipc_thread()
-        self.ipc_thread.join()
-        unlink_ipc_socket()
-        log.info("IPC thread successfully stopped")
+        stop_ipc_process(self.ipc_process, self.ipc_stop_signal)
+        self.ipc_process.join(timeout=5)
+        if self.ipc_process.is_alive():
+            log.warning("IPC process force terminating...")
+            self.ipc_process.terminate()
+            self.ipc_process.join()
+        log.info("IPC process successfully stopped")
 
-        log.info("--------> Core threads stopped")
+        log.info("--------> Core processes stopped")
 
         # ------------ Cleanning core helpers manager ------------
         log.info("--------> Cleanning core helpers manager")
@@ -271,7 +291,7 @@ class LsmyApplication:
                     else:
                         log.info("WiFi connected, but could not retrieve detailed info.")
 
-                    Global_Store.set("wifi_status", "CONNECTED")
+                    self.global_store.set("wifi_status", "CONNECTED")
                 else:
                     log.info("WiFi connected, system operational")
             else:
@@ -316,7 +336,7 @@ class LsmyApplication:
                             log.info("WiFi connect signal found, switching to STA mode")
                             self.wifi_manager.switch_to_sta()
                             self.provision_webserver_manager.stop()
-                            update_wifi_connect_signal(False)
+                            update_wifi_connect_signal(self.global_store, False)
                 else:
                     log.warning("Unknown WiFi mode, switching to STA mode")
                     self.wifi_manager.cleanup_wifi()

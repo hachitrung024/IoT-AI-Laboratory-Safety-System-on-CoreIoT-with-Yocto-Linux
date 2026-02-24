@@ -1,7 +1,7 @@
 from datetime import timedelta
 import time
 import logging
-import threading
+import multiprocessing
 import gpiod
 from gpiod.line import Direction, Edge, Bias, Value
 
@@ -17,9 +17,9 @@ CHIP_PATH = '/dev/gpiochip0'
 BUTTON_PIN = 17
 
 class ResetButtonManager:
-    def __init__(self):
+    def __init__(self, stop_signal):
         log.info("ResetButtonManager initialized")
-        self._stop_event = threading.Event()
+        self._stop_event = stop_signal
 
 
     def start(self):
@@ -30,9 +30,9 @@ class ResetButtonManager:
 
     def stop(self):
         """
-        Stop button handle thread
+        Stop button handle process
         """
-        log.info("========== STOPPING RESET BUTTON MONITOR THREAD ==========")
+        log.info("========== STOPPING RESET BUTTON MONITOR PROCESS ==========")
         self._stop_event.set()
 
     def execute_full_reset(self, wifi_manager: WiFiModeManager):
@@ -46,7 +46,7 @@ class ResetButtonManager:
         log.info("Reset complete. WiFi disconnected and Config cleared.")
 
     def monitor_button_reset(self, wifi_manager: WiFiModeManager):
-        log.info("========== STARTING RESET BUTTON MONITOR THREAD ==========")
+        log.info("========== STARTING RESET BUTTON MONITOR PROCESS ==========")
 
         try:
             line_settings = gpiod.LineSettings(
