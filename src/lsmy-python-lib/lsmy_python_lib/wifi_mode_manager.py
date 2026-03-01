@@ -173,19 +173,23 @@ class WiFiModeManager:
     # Check is wifi is connected
     def is_wifi_connected(self, iface: str = "wlan0") -> bool:
         # STA mode + has IP + Iw dev has default route => WiFi usable
-        iw_dev_result = False
-        result = subprocess.run(
-                ["iw", "dev", iface, "link"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=2
-            )
-        
-        if "Connected to" in result.stdout:
-            iw_dev_result = True
-        else: 
+        try:
             iw_dev_result = False
+            result = subprocess.run(
+                    ["iw", "dev", iface, "link"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=2
+                )
+            
+            if "Connected to" in result.stdout:
+                iw_dev_result = True
+            else: 
+                iw_dev_result = False
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+            log.error("WiFi interface not ready yet, skipping check...")
+            return False
 
         return (
             self.get_wifi_role() == "STA"
