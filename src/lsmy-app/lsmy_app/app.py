@@ -158,8 +158,8 @@ class LsmyApplication:
 
     # -------- Public lifecycle --------
     def start(self):
-        self._setup_signal_handlers()
         self._startup_sequence()
+        self._setup_signal_handlers()
         self._main_loop()
 
     def stop(self):
@@ -257,6 +257,12 @@ class LsmyApplication:
 
         log.info("--------> Core processes stopped")
 
+        # ------------ Stopping global store manager ------------
+        log.info("--------> Stopping global store manager")
+        if hasattr(self, 'global_store_manager'):
+            self.global_store_manager.shutdown()
+        log.info("Global store manager successfully stopped")
+
         # ------------ Cleanning core helpers manager ------------
         log.info("--------> Cleanning core helpers manager")
 
@@ -264,7 +270,7 @@ class LsmyApplication:
 
         log.info("--------> Core helpers cleanned")
 
-        # Final services stop
+        # Network time synchronization services stop
         log.info("Stopping network time synchronization services")
         run_cmd(["systemctl", "stop", "wpa_supplicant"], check=False)
         log.info("Network time synchronization services successfully stopped")
@@ -275,6 +281,9 @@ class LsmyApplication:
         signal.signal(signal.SIGINT, self._handle_termination)
 
     def _handle_termination(self, signum, frame):
+        if multiprocessing.current_process().name != "MainProcess":
+            return
+
         log.info(f"Received termination signal ({signum})")
         self.stop()
 
