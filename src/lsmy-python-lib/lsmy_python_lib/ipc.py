@@ -184,7 +184,7 @@ async def send_update_camera_status_signal_ipc(data: dict, timeout=3):
 ipc_loop = None
 ipc_stop_event = None
 
-async def ipc_server_task():
+async def ipc_server_task(ready_signal):
     global ipc_stop_event
 
     if os.path.exists(SOCK):
@@ -197,6 +197,7 @@ async def ipc_server_task():
     os.chmod(SOCK, 0o660)
 
     log.info("IPC server listening on %s", SOCK)
+    ready_signal.set()
 
     async with server:
         await ipc_stop_event.wait()
@@ -221,8 +222,7 @@ def start_ipc_process(global_store: GlobalStore, stop_signal, ready_signal):
 
     try:
         ipc_loop.create_task(watch_stop_signal())
-        ipc_loop.run_until_complete(ipc_server_task())
-        ready_signal.set()
+        ipc_loop.run_until_complete(ipc_server_task(ready_signal))
     finally:
         ipc_loop.close()
         unlink_ipc_socket()
