@@ -202,7 +202,7 @@ async def ipc_server_task():
         await ipc_stop_event.wait()
 
 # -------- IPC Process --------
-def start_ipc_process(global_store: GlobalStore, stop_signal):
+def start_ipc_process(global_store: GlobalStore, stop_signal, ready_signal):
     log.info("========== STARTING IPC SERVER PROCESS ==========")
     global ipc_loop, ipc_stop_event, GLOBAL_STORE
     GLOBAL_STORE = global_store
@@ -222,9 +222,11 @@ def start_ipc_process(global_store: GlobalStore, stop_signal):
     try:
         ipc_loop.create_task(watch_stop_signal())
         ipc_loop.run_until_complete(ipc_server_task())
+        ready_signal.set()
     finally:
         ipc_loop.close()
         unlink_ipc_socket()
+        ready_signal.clear()
 
 def stop_ipc_process(ipc_process, ipc_stop_signal):
     log.info("========== STOPPING IPC SERVER PROCESS ==========")

@@ -14,12 +14,13 @@ class CameraManager:
     Camera Manager to monitor and restart camera
     """
 
-    def __init__(self, global_store, stop_signal, device_id=0):
+    def __init__(self, global_store, stop_signal, ready_signal, device_id=0):
         log.info("CameraManager initialized")
         self.global_store = global_store
         self.device_id = device_id
         self._max_recover_retries = MAX_RECOVER_TRIES
         self._stop_event = stop_signal
+        self._ready_event = ready_signal
 
         update_camera_status(self.global_store,"INACTIVE")
 
@@ -37,10 +38,12 @@ class CameraManager:
         log.info("========== STOPPING CAMERA MAIN PROCESS PROCESS ==========")
         update_camera_status(self.global_store,"STOPPED")
         self._stop_event.set()
+        self._ready_event.clear()
 
     def camera_main_process(self):
         log.info("========== STARTING CAMERA MAIN PROCESS PROCESS ==========")
         update_camera_status(self.global_store,"INACTIVE")
+        self._ready_event.set()
 
         camera_status = ""
         while True:

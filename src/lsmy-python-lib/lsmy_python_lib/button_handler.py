@@ -17,10 +17,10 @@ CHIP_PATH = '/dev/gpiochip0'
 BUTTON_PIN = 17
 
 class ResetButtonManager:
-    def __init__(self, stop_signal):
+    def __init__(self, stop_signal, ready_signal):
         log.info("ResetButtonManager initialized")
         self._stop_event = stop_signal
-
+        self._ready_event = ready_signal
 
     def start(self):
         """
@@ -34,6 +34,7 @@ class ResetButtonManager:
         """
         log.info("========== STOPPING RESET BUTTON MONITOR PROCESS ==========")
         self._stop_event.set()
+        self._ready_event.clear()
 
     def execute_full_reset(self, wifi_manager: WiFiModeManager):
         log.warning("!!! STARTING FACTORY RESET !!!")
@@ -64,6 +65,7 @@ class ResetButtonManager:
                 
                 press_start = 0
                 log.info(f"Button monitor active on GPIO {BUTTON_PIN} (gpiod)")
+                self._ready_event.set()
 
                 while not self._stop_event.is_set():
                     if request.wait_edge_events(timedelta(seconds=5)):

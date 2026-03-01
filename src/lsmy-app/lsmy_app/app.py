@@ -132,16 +132,22 @@ class LsmyApplication:
         self.camera_watchdog_manager = CameraWatchdogManager()
 
         # ------------ Application processes manager group ------------
+        # Ready signals
+        self.ipc_ready_signal = multiprocessing.Event()
+        self.monitor_button_reset_ready_signal = multiprocessing.Event()
+        self.camera_main_ready_signal = multiprocessing.Event()
+
+        # Stop signals
         self.ipc_stop_signal = multiprocessing.Event()
         self.monitor_button_reset_stop_signal = multiprocessing.Event()
         self.camera_main_stop_signal = multiprocessing.Event()
 
-        self.reset_button_manager = ResetButtonManager(stop_signal=self.monitor_button_reset_stop_signal)
-        self.camera_manager = CameraManager(global_store=self.global_store, stop_signal=self.camera_main_stop_signal)
+        self.reset_button_manager = ResetButtonManager(stop_signal=self.monitor_button_reset_stop_signal, ready_signal=self.monitor_button_reset_ready_signal)
+        self.camera_manager = CameraManager(global_store=self.global_store, stop_signal=self.camera_main_stop_signal, ready_signal=self.camera_main_ready_signal)
 
         # ------------ Process manager ------------
         # IPC Server Process
-        self.ipc_process = multiprocessing.Process(target=start_ipc_process, args=(self.global_store, self.ipc_stop_signal), daemon=True)
+        self.ipc_process = multiprocessing.Process(target=start_ipc_process, args=(self.global_store, self.ipc_stop_signal, self.ipc_ready_signal), daemon=True)
         # Monitor Reset Button Process
         self.monitor_button_reset_process = multiprocessing.Process(target=self.reset_button_manager.monitor_button_reset, args=(self.wifi_manager,), daemon=True)
         # Camera Main Process
@@ -193,12 +199,15 @@ class LsmyApplication:
         log.info("--------> Initializing core processes")
         # IPC Server Process
         self.ipc_process.start()
+        self.ipc_ready_signal.wait()
         log.info("IPC server process successfully started")
         # Monitor Reset Button Process
         self.monitor_button_reset_process.start()
+        self.monitor_button_reset_ready_signal.wait()
         log.info("Reset button monitor process successfully started")
         # Camera Main Process
         self.camera_main_process.start()
+        self.camera_main_ready_signal.wait()
         log.info("Camera main process successfully started")
         log.info("--------> Core processes initialized")
 
