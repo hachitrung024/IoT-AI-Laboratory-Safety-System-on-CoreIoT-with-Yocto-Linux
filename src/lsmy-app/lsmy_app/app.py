@@ -257,18 +257,18 @@ class LsmyApplication:
 
         log.info("--------> Core processes stopped")
 
-        # ------------ Stopping global store manager ------------
-        log.info("--------> Stopping global store manager")
-        if hasattr(self, 'global_store_manager'):
-            self.global_store_manager.shutdown()
-        log.info("Global store manager successfully stopped")
-
         # ------------ Cleanning core helpers manager ------------
         log.info("--------> Cleanning core helpers manager")
 
         self.wifi_manager.cleanup_wifi()
 
         log.info("--------> Core helpers cleanned")
+
+        # ------------ Stopping global store manager ------------
+        log.info("--------> Stopping global store manager")
+        if hasattr(self, 'global_store_manager'):
+            self.global_store_manager.shutdown()
+        log.info("Global store manager successfully stopped")
 
         # Network time synchronization services stop
         log.info("Stopping network time synchronization services")
