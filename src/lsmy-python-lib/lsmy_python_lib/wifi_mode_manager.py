@@ -180,7 +180,7 @@ class WiFiModeManager:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=2
+                    timeout=10
                 )
             
             if "Connected to" in result.stdout:
