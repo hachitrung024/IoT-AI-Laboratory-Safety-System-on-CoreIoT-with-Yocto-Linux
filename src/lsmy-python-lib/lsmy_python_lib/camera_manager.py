@@ -70,7 +70,7 @@ class CameraManager:
                         else:
                             update_camera_status(self.global_store,"INACTIVE")
                             self._stop_event.set()
-                        self._stop_event.wait(5)
+                        time.sleep(5)
                     else:
                         log.info(f"Camera status unknown: {camera_status}")
                         update_camera_status(self.global_store,"INACTIVE")
