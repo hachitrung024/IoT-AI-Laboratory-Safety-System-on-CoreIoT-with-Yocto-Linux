@@ -163,6 +163,10 @@ class LsmyApplication:
         self._main_loop()
 
     def stop(self):
+        if self.state == AppState.STOPPED:
+            log.info("App already stopped, skipping...")
+            return
+
         self._shutdown_sequence()
 
     # -------- Startup / shutdown --------

@@ -66,6 +66,9 @@ def main() -> int:
     except Exception as exc:
         log.exception("Fatal error during application startup")
         return 1
+    finally:
+        if app:
+            app.stop()
 
     log.info("LSMY System exited normally")
     return 0
