@@ -35,13 +35,13 @@ class CameraManager:
         """
         Stop camera manager process
         """
-        log.info("========== STOPPING CAMERA MAIN PROCESS PROCESS ==========")
+        log.info("========== STOPPING CAMERA MAIN PROCESS ==========")
         update_camera_status(self.global_store,"STOPPED")
         self._stop_event.set()
         self._ready_event.clear()
 
     def camera_main_process(self):
-        log.info("========== STARTING CAMERA MAIN PROCESS PROCESS ==========")
+        log.info("========== STARTING CAMERA MAIN PROCESS ==========")
         update_camera_status(self.global_store,"INACTIVE")
         self._ready_event.set()
 
