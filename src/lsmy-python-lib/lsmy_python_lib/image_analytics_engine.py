@@ -33,6 +33,7 @@ class ImageAnalyticsEngine:
         )
         
         self.cap = None
+        self.latest_frame = None
 
         self.running = False
         self._stop_event = threading.Event()
@@ -89,6 +90,8 @@ class ImageAnalyticsEngine:
                 # 2. Run AI Model Inference Logic
                 ai_results = self._ai_inference_logic(frame)
 
+                self.latest_frame = frame
+
                 # 3. Postprocessing - Call the callback function
                 if self.callback:
                     self.callback(ai_results, frame)
@@ -122,13 +125,25 @@ def my_iot_logic(results, frame):
         log.info("Exit key pressed")
 
 if __name__ == "__main__":
-    my_camera = ImageAnalyticsEngine(callback=my_iot_logic)
+    def silent_callback(results, frame):
+        pass
 
+    my_camera = ImageAnalyticsEngine(callback=silent_callback)
     my_camera.start()
 
     try:
         while True:
             # Do something
-            time.sleep(1)
+            frame = my_camera.latest_frame
+            if frame is not None:
+                cv2.imshow("LSMY Monitor", frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                log.info("Exit key pressed")
+                break
+            
+            time.sleep(0.01)
+            # time.sleep(1)
     except KeyboardInterrupt:
         my_camera.stop()
