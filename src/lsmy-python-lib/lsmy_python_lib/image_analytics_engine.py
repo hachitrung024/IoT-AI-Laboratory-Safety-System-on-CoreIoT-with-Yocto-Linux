@@ -27,9 +27,10 @@ class ImageAnalyticsEngine:
         
         # Pipeline GStreamer for camera
         self.pipeline = (
-            f"libcamerasrc ! "
-            f"video/x-raw, width={self.width}, height={self.height}, framerate=15/1 ! "
-            f"videoconvert ! video/x-raw, format=BGR ! appsink drop=True"
+            f"libcamerasrc ! video/x-raw, width={self.width}, height={self.height}, framerate=15/1 ! "
+            f"tee name=t "
+            f"t. ! queue ! videoconvert ! waylandsink "
+            f"t. ! queue ! videoconvert ! video/x-raw, format=BGR ! appsink drop=True"
         )
         
         self.cap = None
@@ -134,16 +135,6 @@ if __name__ == "__main__":
     try:
         while True:
             # Do something
-            frame = my_camera.latest_frame
-            if frame is not None:
-                cv2.imshow("LSMY Monitor", frame)
-            
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                log.info("Exit key pressed")
-                break
-            
-            time.sleep(0.01)
-            # time.sleep(1)
+            time.sleep(1)
     except KeyboardInterrupt:
         my_camera.stop()
