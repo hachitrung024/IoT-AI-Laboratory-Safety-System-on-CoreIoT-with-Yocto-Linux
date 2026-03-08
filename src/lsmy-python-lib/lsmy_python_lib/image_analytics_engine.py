@@ -50,6 +50,7 @@ class ImageAnalyticsEngine:
 
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
+        self._main_thread = threading.Thread(target=self._main_loop, daemon=True)
         self._stop_event = threading.Event()
 
         self.real_fps = fps
@@ -94,8 +95,8 @@ class ImageAnalyticsEngine:
             self._gst_thread.start()
             log.info("Image Analytics Engine thread successfully started")
 
-            # Start main loop
-            self.main_loop()
+            # Start main thread
+            self._main_thread.start()
 
     def stop(self):
         """
@@ -108,12 +109,18 @@ class ImageAnalyticsEngine:
 
         self._gst_thread.join(timeout=3)
         if self._gst_thread.is_alive():
-            log.warning("Image Analytics Engine thread cannot be stopped")
+            log.warning("Image Analytics Engine GStreamer thread cannot be stopped")
         else:
-            log.info("Image Analytics Engine thread successfully stopped")
+            log.info("Image Analytics Engine GStreamer thread successfully stopped")
 
         self.running = False
         self._stop_event.set()
+
+        self._main_thread.join(timeout=3)
+        if self._main_thread.is_alive():
+            log.warning("Image Analytics Engine Main thread cannot be stopped")
+        else:
+            log.info("Image Analytics Engine Main thread successfully stopped")
 
         cv2.destroyAllWindows()
 
@@ -154,6 +161,7 @@ class ImageAnalyticsEngine:
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
+                f"video/x-raw,format=BGR ! "
                 f"tee name=t "
 
                 f"t. ! queue ! "
@@ -222,11 +230,14 @@ class ImageAnalyticsEngine:
             self.last_time = time.time()
 
     #  Main loop
-    def main_loop(self):
+    def _main_loop(self):
         while not self._stop_event.is_set():
-            result = self.result_queue.get()
+            try:
+                result = self.result_queue.get(timeout=0.1)
+            except:
+                continue
+
             if result is not None:
-                # Postprocessing results
                 pass
 
 if __name__ == "__main__":
