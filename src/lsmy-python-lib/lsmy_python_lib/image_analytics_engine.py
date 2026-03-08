@@ -120,7 +120,7 @@ class ImageAnalyticsEngine:
         log.info("Image Analytics Engine successfully stopped")
 
     def build_pipeline_str(self):
-        """
+        r"""
         The pipeline:
                                                        / -> inference ->     \    / -> appsink
           libcamerasrc -> videoconvert -> videoscale ->                        ->
