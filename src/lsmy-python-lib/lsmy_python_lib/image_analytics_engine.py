@@ -11,7 +11,7 @@ import cv2
 # GObject Introspection for GStreamer
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GObject
+from gi.repository import Gst, GLib
 
 log = logging.getLogger("image-analytics-engine")
 
@@ -48,7 +48,7 @@ class ImageAnalyticsEngine:
         self.pipeline = None
         self.appsink = None
 
-        self._gst_main_loop = GObject.MainLoop()
+        self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
         self._stop_event = threading.Event()
 
