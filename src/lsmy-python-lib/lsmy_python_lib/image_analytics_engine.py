@@ -13,6 +13,11 @@ import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
 log = logging.getLogger("image-analytics-engine")
 
 # Initialize GStreamer Library
@@ -251,5 +256,7 @@ if __name__ == "__main__":
         engine.start()
     except KeyboardInterrupt:
         log.info("Interrupted by keyboard")
+    except Exception as e:
+        log.exception("Unexpected error occurred: %s", e)
     finally:
         engine.stop()
