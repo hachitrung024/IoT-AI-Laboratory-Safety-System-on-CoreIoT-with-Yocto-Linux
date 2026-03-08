@@ -166,7 +166,6 @@ class ImageAnalyticsEngine:
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
-                f"video/x-raw,format=BGR ! "
                 f"tee name=t "
 
                 f"t. ! queue ! "
@@ -254,6 +253,9 @@ if __name__ == "__main__":
                                use_model=False)
     try:
         engine.start()
+        
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
         log.info("Interrupted by keyboard")
     except Exception as e:
