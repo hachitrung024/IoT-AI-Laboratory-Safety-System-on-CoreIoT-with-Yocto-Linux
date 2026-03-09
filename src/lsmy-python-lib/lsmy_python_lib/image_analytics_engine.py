@@ -5,9 +5,6 @@ import threading
 import numpy as np
 from queue import Queue
 
-# For showing frames to debug
-import cv2
-
 # GObject Introspection for GStreamer
 import gi
 gi.require_version('Gst', '1.0')
@@ -34,12 +31,12 @@ class ImageAnalyticsEngine:
     It also handles the AI inference logic and the callback function.
     """
 
-    def __init__(self, width=640, height=480, fps=15, model_path="/path/to/model.xml",
-                 model_proc="/path/to/model-proc.json", use_model=True, debug_mode=False):
+    def __init__(self, width=640, height=480, fps=15, model_path="/path/to/model.tflite",
+                use_model=True, debug_mode=False):
         """
-        :param model_path: model (OpenVINO .xml) or other model file depending on plugin
-        :param model_proc: model-proc for GVA (optional)
+        :param model_path: model (.tflite) or other model file depending on plugin
         :param use_model: use model ai inference or not
+        :param debug_mode: show debug frames on screen
         """
         log.info("ImageAnalyticsEngine initialized")
         
@@ -47,7 +44,6 @@ class ImageAnalyticsEngine:
         self.height = height
         self.fps = fps
         self.model_path = model_path
-        self.model_proc = model_proc
         self.use_model = use_model
         self.debug_mode = debug_mode
 
@@ -128,8 +124,6 @@ class ImageAnalyticsEngine:
         else:
             log.info("Image Analytics Engine Main thread successfully stopped")
 
-        cv2.destroyAllWindows()
-
         log.info("Image Analytics Engine successfully stopped")
 
     def build_pipeline_str(self):
@@ -143,11 +137,15 @@ class ImageAnalyticsEngine:
             pipeline = (
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
-                f"videoconvert ! videoscale ! "
+                f"videoconvert ! "
+                f"video/x-raw,format=RGB ! "
+                f"videoscale ! "
+                f"video/x-raw,width=300,height=300 ! "
 
-                # AI inference
-                f"gvainference model={self.model_path} "
-                f"model-proc={self.model_proc} device=CPU ! "
+                f"tensor_converter ! "
+                # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                f"tensor_filter framework=tensorflow-lite model={self.model_path} ! "
+                f"tensor_decoder mode=bounding_boxes option1=mobilenet-ssd ! "
 
                 # Split pipeline
                 f"tee name=t "
@@ -172,6 +170,8 @@ class ImageAnalyticsEngine:
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
+
+                # Split pipeline
                 f"tee name=t "
 
                 # Branch 1: raw frames
@@ -253,11 +253,10 @@ class ImageAnalyticsEngine:
                 pass
 
 if __name__ == "__main__":
-    model_xml = "/opt/models/people_counter/FP32/model.xml"
-    model_proc = "/opt/models/people_counter/model-proc.json"
+    model_path = "/opt/models/people_counter/FP32/model.xml"
 
     engine = ImageAnalyticsEngine(width=640, height=480, fps=15,
-                               model_path=model_xml, model_proc=model_proc,
+                               model_path=model_path,
                                use_model=False, debug_mode=False)
     try:
         engine.start()
