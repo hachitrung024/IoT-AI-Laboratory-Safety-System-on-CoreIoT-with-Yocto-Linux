@@ -35,7 +35,7 @@ class ImageAnalyticsEngine:
     """
 
     def __init__(self, width=640, height=480, fps=15, model_path="/path/to/model.xml",
-                 model_proc="/path/to/model-proc.json", use_model=True):
+                 model_proc="/path/to/model-proc.json", use_model=True, debug_mode=False):
         """
         :param model_path: model (OpenVINO .xml) or other model file depending on plugin
         :param model_proc: model-proc for GVA (optional)
@@ -49,6 +49,7 @@ class ImageAnalyticsEngine:
         self.model_path = model_path
         self.model_proc = model_proc
         self.use_model = use_model
+        self.debug_mode = debug_mode
 
         self.pipeline = None
         self.appsink = None
@@ -150,16 +151,21 @@ class ImageAnalyticsEngine:
 
                 # Split pipeline
                 f"tee name=t "
-
-                # Branch 1: python metadata
-                f"t. ! queue ! "
-                f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "
-
-                # Branch 2: debug display
-                f"t. ! queue ! "
-                f"gvawatermark ! "
-                f"autovideosink sync=false"
             )
+
+            # Branch 1: python metadata
+            pipeline += (
+                f"t. ! queue ! "
+                f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
+            )
+
+            # Branch 2: debug display
+            if self.debug_mode:
+                pipeline += (
+                    f"t. ! queue ! "
+                    f"gvawatermark ! "
+                    f"autovideosink sync=false"   
+                )
 
         else:
             pipeline = (
@@ -168,9 +174,11 @@ class ImageAnalyticsEngine:
                 f"videoconvert ! "
                 f"tee name=t "
 
+                # Branch 1: raw frames
                 f"t. ! queue ! "
                 f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "
 
+                # Branch 2: debug display
                 f"t. ! queue ! "
                 f"autovideosink sync=false"
             )
@@ -250,7 +258,7 @@ if __name__ == "__main__":
 
     engine = ImageAnalyticsEngine(width=640, height=480, fps=15,
                                model_path=model_xml, model_proc=model_proc,
-                               use_model=False)
+                               use_model=False, debug_mode=False)
     try:
         engine.start()
         
