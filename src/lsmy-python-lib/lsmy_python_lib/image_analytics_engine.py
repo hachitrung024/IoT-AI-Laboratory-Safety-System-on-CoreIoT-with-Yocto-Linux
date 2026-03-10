@@ -144,7 +144,7 @@ class ImageAnalyticsEngine:
 
                 f"tensor_converter ! "
                 # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                f"tensor_filter framework=tensorflow-lite model={self.model_path} ! "
+                f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
                 f"tensor_decoder mode=bounding_boxes option1=mobilenet-ssd ! "
 
                 # Split pipeline
