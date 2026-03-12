@@ -166,7 +166,7 @@ class ImageAnalyticsEngine:
 
                 # Branch 2: Debug display
                 pipeline += (
-                    f"t. ! queue leaky=downstream ! rsvgoverlay name=overlay ! "
+                    f"t. ! queue leaky=downstream ! videoconvert ! rsvgoverlay name=overlay ! "
                     f"videoconvert ! autovideosink sync=false "
                 )
             else:
@@ -264,6 +264,7 @@ class ImageAnalyticsEngine:
     #  Main loop
     def _main_loop(self):
         while not self._stop_event.is_set():
+            result = None
             try:
                 result = self.result_queue.get(timeout=1)
             except queue.Empty:
@@ -341,7 +342,7 @@ if __name__ == "__main__":
 
     engine = ImageAnalyticsEngine(width=640, height=480, fps=15,
                                model_path=model_path,
-                               use_model=True, debug_mode=False)
+                               use_model=True, debug_mode=True)
     try:
         engine.start()
         
