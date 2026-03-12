@@ -151,14 +151,14 @@ class ImageAnalyticsEngine:
 
                 f"tensor_converter ! "
                 f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                f"tensor_filter framework=tensorflow2-lite model={self.model_path} "
+                f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
                 # f"tensor_decoder mode=bounding_boxes option1=mobilenet-ssd ! "
             )
             
             if self.debug_mode:
                 # Split pipeline
                 pipeline += (
-                   f"! tee name=t "
+                   f"tee name=t "
                 )
 
                 # Branch 1: python metadata
@@ -215,7 +215,7 @@ class ImageAnalyticsEngine:
         Called in GStreamer thread context when appsink has a new sample.
         Convert sample -> numpy array and extract metadata.
         """
-        log.info("Received new sample from appsink")
+        # log.info("Received new sample from appsink")
         sample = appsink.emit("pull-sample")
         if sample is None:
             return Gst.FlowReturn.OK
@@ -265,7 +265,7 @@ class ImageAnalyticsEngine:
             try:
                 result = self.result_queue.get()
             except Exception as e:
-                log.exception("Error getting result from queue %s", e)
+                log.warning("Error getting result from queue %s", e)
 
             if result is not None:
                 raw_data = result.get("raw")
