@@ -50,6 +50,7 @@ class ImageAnalyticsEngine:
 
         self.pipeline = None
         self.appsink = None
+        self.overlay = None
 
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
@@ -81,8 +82,11 @@ class ImageAnalyticsEngine:
 
             self.pipeline = Gst.parse_launch(pipeline_str)
             self.appsink = self.pipeline.get_by_name("appsink")
+            self.overlay = self.pipeline.get_by_name("overlay")
             if self.appsink is None:
                 raise RuntimeError("appsink element not found in pipeline")
+            if self.overlay is None and self.debug_mode:
+                raise RuntimeError("overlay element not found in pipeline")
             
             bus = self.pipeline.get_bus()
             bus.add_signal_watch()
@@ -144,52 +148,49 @@ class ImageAnalyticsEngine:
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
-                f"videoscale ! "
-                f"video/x-raw,width=128,height=128,format=RGB ! "
-                # f"video/x-raw,format=RGB ! "
-                # f"videoscale ! "
-                # f"video/x-raw,width=128,height=128 ! "
-
-                f"tensor_converter ! "
-                f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
-                # f"tensor_decoder mode=bounding_boxes option1=mobilenet-ssd ! "
             )
             
             if self.debug_mode:
-                # Split pipeline
+                # Branch 1: AI inference
                 pipeline += (
-                   f"tee name=t "
-                )
-
-                # Branch 1: python metadata
-                pipeline += (
-                    f"t. ! queue ! "
+                    # Split pipeline into two branches
+                    f"tee name=t "
+                    f"t. ! queue leaky=downstream ! "
+                    f"videoscale ! "
+                    f"video/x-raw,width=128,height=128,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
 
-                # Branch 2: debug display
+                # Branch 2: Debug display
                 pipeline += (
-                    f"t. ! queue ! "
-                    f"autovideosink sync=false"   
+                    f"t. ! queue leaky=downstream ! rsvgoverlay name=overlay ! "
+                    f"videoconvert ! autovideosink sync=false "
                 )
             else:
-                pipeline += f"appsink name=appsink emit-signals=true max-buffers=1 drop=true"
-
+                pipeline += (
+                    f"videoscale ! "
+                    f"video/x-raw,width=128,height=128,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
+                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
+                )
         else:
             pipeline = (
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
-
                 # Split pipeline
                 f"tee name=t "
 
-                # Branch 1: raw frames
+                # Branch 1: Raw frames
                 f"t. ! queue ! "
                 f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "
 
-                # Branch 2: debug display
+                # Branch 2: Debug display
                 f"t. ! queue ! "
                 f"autovideosink sync=false"
             )
@@ -277,13 +278,63 @@ class ImageAnalyticsEngine:
                 raw_data = result.get("raw")
                 is_people = result.get("people")
 
-                if is_people and raw_data is not None:
+                if is_people and raw_data is not None and len(raw_data) >= 4:
                     log.info("--- [AI DATA] ---")
                     log.info(f"Number of data: {len(raw_data)}")
                     log.info(f"First 5 data: {raw_data[:5]}")
                     log.info("-" * 30)
+
+                    # Debug display
+                    if self.debug_mode and self.overlay:
+                        decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
+                        if decoded:
+                            x, y, w, h = decoded
+                            svg_data = f"""
+                            <svg width="{self.width}" height="{self.height}">
+                                <rect x="{x}" y="{y}" width="{w}" height="{h}" 
+                                style="fill:none;stroke:lime;stroke-width:3" />
+                                <text x="{x}" y="{y-10}" fill="lime" font-size="20">FACE DETECTED</text>
+                            </svg>
+                            """
+                        
+                            self.overlay.set_property("data", svg_data)
+                        else:
+                            self.overlay.set_property("data", "")
                 else:
+                    if self.debug_mode and self.overlay:
+                        self.overlay.set_property("data", "")
                     log.info("Waiting for face detection...")
+
+def decode_blazeface(raw_data, score_threshold=0.75, width=640, height=480):
+    """
+    Decode the array 15,232 into face coordinates. (x, y, w, h)
+    """
+    # Split the array: the first 14,336 numbers are Box, and the remaining 896 numbers are Score.
+    boxes = raw_data[:14336].reshape(896, 16)
+    scores = raw_data[14336:]
+    
+    sigmoid_scores = 1 / (1 + np.exp(-scores))
+    
+    best_idx = np.argmax(sigmoid_scores)
+    
+    if sigmoid_scores[best_idx] < score_threshold:
+        return None
+            
+    if best_idx == -1:
+        return None
+
+    raw_box = boxes[best_idx]
+    
+    # Scale to Pixel
+    cx = raw_box[1] / 128.0 * width
+    cy = raw_box[0] / 128.0 * height
+    w = raw_box[3] / 128.0 * width
+    h = raw_box[2] / 128.0 * height
+    
+    x = cx - w/2
+    y = cy - h/2
+    
+    return x, y, w, h
 
 if __name__ == "__main__":
     model_path = "/usr/share/models/blaze_face_short_range.tflite"
