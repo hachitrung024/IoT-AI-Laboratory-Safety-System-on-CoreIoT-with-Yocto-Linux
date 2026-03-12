@@ -3,6 +3,7 @@ import time
 import logging
 import threading
 import numpy as np
+import queue
 from queue import Queue
 
 # GObject Introspection for GStreamer
@@ -263,9 +264,14 @@ class ImageAnalyticsEngine:
     def _main_loop(self):
         while not self._stop_event.is_set():
             try:
-                result = self.result_queue.get()
+                result = self.result_queue.get(timeout=1)
+            except queue.Empty:
+                pass
             except Exception as e:
                 log.warning("Error getting result from queue %s", e)
+
+            if self._stop_event.is_set():
+                break
 
             if result is not None:
                 raw_data = result.get("raw")
