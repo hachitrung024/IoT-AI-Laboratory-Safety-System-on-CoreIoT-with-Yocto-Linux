@@ -83,6 +83,10 @@ class ImageAnalyticsEngine:
             if self.appsink is None:
                 raise RuntimeError("appsink element not found in pipeline")
             
+            bus = self.pipeline.get_bus()
+            bus.add_signal_watch()
+            bus.connect("message::error", self.on_gst_error)
+            
             # Configure appsink
             # emit-signals true to connect to "new-sample" signal
             self.appsink.set_property("emit-signals", True)
@@ -95,10 +99,11 @@ class ImageAnalyticsEngine:
             self.running = True
             self._stop_event.clear()
             self._gst_thread.start()
-            log.info("Image Analytics Engine thread successfully started")
+            log.info("Image Analytics Engine GStreamer thread successfully started")
 
             # Start main thread
             self._main_thread.start()
+            log.info("Image Analytics Engine Main thread successfully started")
 
     def stop(self):
         """
@@ -138,6 +143,7 @@ class ImageAnalyticsEngine:
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
+                f"videoscale ! "
                 f"video/x-raw,width=128,height=128,format=RGB ! "
                 # f"video/x-raw,format=RGB ! "
                 # f"videoscale ! "
@@ -209,6 +215,7 @@ class ImageAnalyticsEngine:
         Called in GStreamer thread context when appsink has a new sample.
         Convert sample -> numpy array and extract metadata.
         """
+        log.info("Received new sample from appsink")
         sample = appsink.emit("pull-sample")
         if sample is None:
             return Gst.FlowReturn.OK
@@ -235,20 +242,13 @@ class ImageAnalyticsEngine:
                     except:
                         pass
                 self.result_queue.put(ai_results)
-        
-        # ai_results = parse_ai_metadata(buf)
-        # ai_results = {"people": None, "fatigue": None, "raw": None}
-
-        # Push results to queue
-        # if all(v is not None for v in ai_results.values()):
-        #     if self.result_queue.full():
-        #         try:
-        #             self.result_queue.get_nowait()
-        #         except:
-        #             pass
-        #     self.result_queue.put(ai_results)
 
         return Gst.FlowReturn.OK
+    
+    def on_gst_error(self, bus, message):
+        err, debug = message.parse_error()
+        log.error(f"GStreamer Error: {err.message}")
+        log.error(f"Debug details: {debug}")
     
     # Measure real FPS
     def measure_real_fps(self):
@@ -263,21 +263,21 @@ class ImageAnalyticsEngine:
     def _main_loop(self):
         while not self._stop_event.is_set():
             try:
-                result = self.result_queue.get(timeout=0.1)
-            except:
-                continue
+                result = self.result_queue.get()
+            except Exception as e:
+                log.exception("Error getting result from queue %s", e)
 
             if result is not None:
                 raw_data = result.get("raw")
                 is_people = result.get("people")
 
                 if is_people and raw_data is not None:
-                    print(f"--- [AI DATA] ---")
-                    print(f"Number of data: {len(raw_data)}")
-                    print(f"First 5 data: {raw_data[:5]}")
-                    print("-" * 30)
+                    log.info("--- [AI DATA] ---")
+                    log.info(f"Number of data: {len(raw_data)}")
+                    log.info(f"First 5 data: {raw_data[:5]}")
+                    log.info("-" * 30)
                 else:
-                    print("Waiting for face detection...")
+                    log.info("Waiting for face detection...")
 
 if __name__ == "__main__":
     model_path = "/usr/share/models/blaze_face_short_range.tflite"
