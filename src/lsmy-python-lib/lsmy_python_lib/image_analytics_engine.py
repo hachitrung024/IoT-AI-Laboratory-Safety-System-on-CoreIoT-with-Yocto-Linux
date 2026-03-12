@@ -138,32 +138,36 @@ class ImageAnalyticsEngine:
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"videoconvert ! "
-                f"video/x-raw,format=RGB ! "
-                f"videoscale ! "
-                f"video/x-raw,width=300,height=300 ! "
+                f"video/x-raw,width=128,height=128,format=RGB ! "
+                # f"video/x-raw,format=RGB ! "
+                # f"videoscale ! "
+                # f"video/x-raw,width=128,height=128 ! "
 
                 f"tensor_converter ! "
-                # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
-                f"tensor_decoder mode=bounding_boxes option1=mobilenet-ssd ! "
-
-                # Split pipeline
-                f"tee name=t "
+                f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                f"tensor_filter framework=tensorflow2-lite model={self.model_path} "
+                # f"tensor_decoder mode=bounding_boxes option1=mobilenet-ssd ! "
             )
-
-            # Branch 1: python metadata
-            pipeline += (
-                f"t. ! queue ! "
-                f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
-            )
-
-            # Branch 2: debug display
+            
             if self.debug_mode:
+                # Split pipeline
+                pipeline += (
+                   f"! tee name=t "
+                )
+
+                # Branch 1: python metadata
                 pipeline += (
                     f"t. ! queue ! "
-                    f"gvawatermark ! "
+                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
+                )
+
+                # Branch 2: debug display
+                pipeline += (
+                    f"t. ! queue ! "
                     f"autovideosink sync=false"   
                 )
+            else:
+                pipeline += f"appsink name=appsink emit-signals=true max-buffers=1 drop=true"
 
         else:
             pipeline = (
@@ -210,25 +214,39 @@ class ImageAnalyticsEngine:
             return Gst.FlowReturn.OK
 
         buf = sample.get_buffer()
-        caps = sample.get_caps()
 
-        structure = caps.get_structure(0)
-        width = structure.get_value('width')
-        height = structure.get_value('height')
-        fmt = structure.get_value('format')
+        success, map_info = buf.map(Gst.MapFlags.READ)
+        if success:
+            # res_array = np.frombuffer(map_info.data, dtype=np.float32)
+            res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
+            
+            if len(res_array) > 0:
+                ai_results = {"people": True, "fatigue": None, "raw": res_array}
+            else:
+                ai_results = {"people": False, "fatigue": None, "raw": None}
+            
+            self.measure_real_fps()
+            buf.unmap(map_info)
 
+            if ai_results["people"]:
+                if self.result_queue.full():
+                    try:
+                        self.result_queue.get_nowait()
+                    except:
+                        pass
+                self.result_queue.put(ai_results)
+        
         # ai_results = parse_ai_metadata(buf)
-        ai_results = {"people": None, "fatigue": None, "raw": None}
-        self.measure_real_fps()
+        # ai_results = {"people": None, "fatigue": None, "raw": None}
 
         # Push results to queue
-        if all(v is not None for v in ai_results.values()):
-            if self.result_queue.full():
-                try:
-                    self.result_queue.get_nowait()
-                except:
-                    pass
-            self.result_queue.put(ai_results)
+        # if all(v is not None for v in ai_results.values()):
+        #     if self.result_queue.full():
+        #         try:
+        #             self.result_queue.get_nowait()
+        #         except:
+        #             pass
+        #     self.result_queue.put(ai_results)
 
         return Gst.FlowReturn.OK
     
@@ -250,14 +268,23 @@ class ImageAnalyticsEngine:
                 continue
 
             if result is not None:
-                pass
+                raw_data = result.get("raw")
+                is_people = result.get("people")
+
+                if is_people and raw_data is not None:
+                    print(f"--- [AI DATA] ---")
+                    print(f"Number of data: {len(raw_data)}")
+                    print(f"First 5 data: {raw_data[:5]}")
+                    print("-" * 30)
+                else:
+                    print("Waiting for face detection...")
 
 if __name__ == "__main__":
-    model_path = "/opt/models/people_counter/FP32/model.xml"
+    model_path = "/usr/share/models/blaze_face_short_range.tflite"
 
     engine = ImageAnalyticsEngine(width=640, height=480, fps=15,
                                model_path=model_path,
-                               use_model=False, debug_mode=False)
+                               use_model=True, debug_mode=False)
     try:
         engine.start()
         
