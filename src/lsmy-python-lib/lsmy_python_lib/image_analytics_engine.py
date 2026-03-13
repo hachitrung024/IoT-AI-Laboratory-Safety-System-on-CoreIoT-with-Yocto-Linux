@@ -448,6 +448,8 @@ class ImageAnalyticsEngine:
                                 style="fill:none;stroke:lime;stroke-width:3" />
                                 <rect x="5" y="5" width="160" height="65" rx="5" fill="black" fill-opacity="0.5" />
                                 <text x="15" y="25" font-family="monospace" font-size="14" fill="white">FPS: {self.pipeline_fps}</text>
+                                <text x="15" y="45" font-family="monospace" font-size="14" fill="white">AI Latency: {self.avg_inference_time}</text>
+                                <text x="15" y="65" font-family="monospace" font-size="14" fill="white">Pipeline Latency: {self.pipeline_latency}</text>
                                 {svg_content}
                             </svg>
                             """
@@ -525,9 +527,9 @@ def decode_blazeface(raw_data, score_threshold=0.75, width=640, height=480):
     # 6 Landmarks
     landmarks = []
     for i in range(6):
-        ky_raw = raw_box[4 + i*2]
-        kx_raw = raw_box[4 + i*2 + 1]
-        
+        kx_raw = raw_box[4 + i*2]
+        ky_raw = raw_box[4 + i*2 + 1]
+
         kx = (kx_raw / 128.0 + anchor[0]) * width
         ky = (ky_raw / 128.0 + anchor[1]) * height
         
