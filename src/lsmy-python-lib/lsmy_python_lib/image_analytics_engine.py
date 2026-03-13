@@ -470,7 +470,7 @@ def decode_blazeface(raw_data, score_threshold=0.75, width=640, height=480):
     boxes = raw_data[:14336].reshape(896, 16)
     scores = raw_data[14336:]
     
-    sigmoid_scores = 1 / (1 + np.exp(-scores))
+    sigmoid_scores = 1 / (1 + np.exp(-np.clip(scores, -88, 88)))
     
     best_idx = np.argmax(sigmoid_scores)
     
