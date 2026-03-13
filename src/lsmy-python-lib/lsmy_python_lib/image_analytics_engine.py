@@ -54,6 +54,8 @@ class ImageAnalyticsEngine:
         self.pipeline = None
         self.appsink = None
         self.overlay = None
+        self.infer_start = None
+        self.infer_end = None
 
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
@@ -96,10 +98,18 @@ class ImageAnalyticsEngine:
             self.pipeline = Gst.parse_launch(pipeline_str)
             self.appsink = self.pipeline.get_by_name("appsink")
             self.overlay = self.pipeline.get_by_name("overlay")
+
+            self.infer_start = self.pipeline.get_by_name("infer_start")
+            self.infer_end = self.pipeline.get_by_name("infer_end")
+
             if self.appsink is None:
                 raise RuntimeError("appsink element not found in pipeline")
             if self.overlay is None and self.debug_mode:
                 raise RuntimeError("overlay element not found in pipeline")
+            if self.infer_start is None:
+                raise RuntimeError("infer_start element not found in pipeline")
+            if self.infer_end is None:
+                raise RuntimeError("infer_end element not found in pipeline")
             
             bus = self.pipeline.get_bus()
             bus.add_signal_watch()
@@ -112,6 +122,10 @@ class ImageAnalyticsEngine:
 
             # Connect signal: new-sample
             self.appsink.connect("new-sample", self.on_new_sample)
+
+            # Connect signal: AI inference
+            self.infer_start.connect("handoff", self.on_infer_start)
+            self.infer_end.connect("handoff", self.on_infer_end)
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
@@ -189,7 +203,9 @@ class ImageAnalyticsEngine:
                     f"video/x-raw,width=128,height=128,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"identity name=infer_start ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
+                    f"identity name=infer_end ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
 
@@ -261,11 +277,6 @@ class ImageAnalyticsEngine:
             current_pipeline_time = clock.get_time() - base_time
             pipeline_latency = (current_pipeline_time - buf.pts) / Gst.MSECOND
 
-        inference_time = 0
-        inference_timestamp = 0
-        if inference_timestamp > 0:
-            inference_time = inference_timestamp / 1_000_000.0
-
         success, map_info = buf.map(Gst.MapFlags.READ)
         if success:
             # res_array = np.frombuffer(map_info.data, dtype=np.float32)
@@ -277,7 +288,7 @@ class ImageAnalyticsEngine:
             else:
                 ai_results = {"people": False, "fatigue": None, "raw": None}
             
-            self.measure_pipeline_metrics(inference_time, pipeline_latency)
+            self.measure_pipeline_metrics(self.inference_time, pipeline_latency)
             buf.unmap(map_info)
 
             if ai_results["people"]:
@@ -294,6 +305,14 @@ class ImageAnalyticsEngine:
         err, debug = message.parse_error()
         log.error(f"GStreamer Error: {err.message}")
         log.error(f"Debug details: {debug}")
+
+    def on_infer_start(self, element, buffer):
+        buffer.qdata = time.time()
+
+    def on_infer_end(self, element, buffer):
+        start = getattr(buffer, "qdata", None)
+        if start:
+            self.inference_time = (time.time() - start) * 1000
     
     # Measure pipeline FPS
     def measure_pipeline_metrics(self, inference_time=0, pipeline_latency=0):
