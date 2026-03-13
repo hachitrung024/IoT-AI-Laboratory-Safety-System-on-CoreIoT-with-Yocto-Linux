@@ -57,7 +57,7 @@ class ImageAnalyticsEngine:
         self.infer_start = None
         self.infer_end = None
 
-        self.q_infer_time = Gst.Quark.from_string("infer_time")
+        self._infer_timestamps = {}
 
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
@@ -309,10 +309,11 @@ class ImageAnalyticsEngine:
         log.error(f"Debug details: {debug}")
 
     def on_infer_start(self, element, buffer):
-        buffer.set_qdata(self.q_infer_time, time.time())
+        if buffer.pts != Gst.CLOCK_TIME_NONE:
+            self._infer_timestamps[buffer.pts] = time.time()
 
     def on_infer_end(self, element, buffer):
-        start = buffer.get_qdata(self.q_infer_time)
+        start = self._infer_timestamps.pop(buffer.pts, None)
         if start:
             self.inference_time = (time.time() - start) * 1000
     
