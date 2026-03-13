@@ -459,9 +459,9 @@ class ImageAnalyticsEngine:
                                 </svg>
                                 """
                             
-                                self.overlay.set_property("data", svg_data)
+                                GLib.idle_add(self.overlay.set_property, "data", svg_data)
                             else:
-                                self.overlay.set_property("data", "")
+                                GLib.idle_add(self.overlay.set_property, "data", "")
                             self.overlay_update_time = now
                         else:
                             log.info("--- [AI DATA] ---")
@@ -470,7 +470,7 @@ class ImageAnalyticsEngine:
                             log.info("-" * 30)
                     else:
                         if self.debug_mode and self.overlay:
-                            self.overlay.set_property("data", "")
+                            GLib.idle_add(self.overlay.set_property, "data", "")
                             self.overlay_update_time = now
                         # log.info("Waiting for face detection...")
 
