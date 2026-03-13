@@ -1,8 +1,11 @@
 import os
 import time
+import psutil
 import logging
 import threading
+import subprocess
 import numpy as np
+
 import queue
 from queue import Queue
 
@@ -55,15 +58,25 @@ class ImageAnalyticsEngine:
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
         self._main_thread = threading.Thread(target=self._main_loop, daemon=True)
+        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._stop_event = threading.Event()
 
-        self.real_fps = fps
+        self.metrics_lock = threading.Lock()
+        self.critical_lock = threading.Lock()
+
+        self.pipeline_fps = fps
         self.result_count = 0
         self.last_time = time.time()
+
+        self.avg_inference_time = 0.0
+        self.avg_pipeline_latency = 0.0
+        self.inference_time = 0.0
+        self.pipeline_latency = 0.0
 
         self.result_queue = Queue(maxsize=1)
 
         self.running = False
+        self.is_critical = False
 
     def start(self):
         """
@@ -102,13 +115,22 @@ class ImageAnalyticsEngine:
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
+            self.is_critical = False
             self._stop_event.clear()
+
+            # Start GStreamer thread
             self._gst_thread.start()
             log.info("Image Analytics Engine GStreamer thread successfully started")
 
             # Start main thread
             self._main_thread.start()
             log.info("Image Analytics Engine Main thread successfully started")
+
+            # Start monitor thread
+            self._monitor_thread.start()
+            log.info("Image Analytics Engine Monitor thread successfully started")
+
+            log.info("Image Analytics Engine successfully started")
 
     def stop(self):
         """
@@ -125,7 +147,6 @@ class ImageAnalyticsEngine:
         else:
             log.info("Image Analytics Engine GStreamer thread successfully stopped")
 
-        self.running = False
         self._stop_event.set()
 
         self._main_thread.join(timeout=3)
@@ -134,6 +155,14 @@ class ImageAnalyticsEngine:
         else:
             log.info("Image Analytics Engine Main thread successfully stopped")
 
+        self._monitor_thread.join(timeout=3)
+        if self._monitor_thread.is_alive():
+            log.warning("Image Analytics Engine Monitor thread cannot be stopped")
+        else:
+            log.info("Image Analytics Engine Monitor thread successfully stopped")
+
+        self.running = False
+        self.is_critical = False
         log.info("Image Analytics Engine successfully stopped")
 
     def build_pipeline_str(self):
@@ -222,7 +251,18 @@ class ImageAnalyticsEngine:
         if sample is None:
             return Gst.FlowReturn.OK
 
+        now = time.time()
         buf = sample.get_buffer()
+        # PTS - Presentation Timestamp
+        pts_timestamp = buf.pts / Gst.SECOND
+        inference_timestamp = buf.get_duration()
+
+        pipeline_latency = 0
+        inference_time = 0
+        if pts_timestamp > 0:
+            pipeline_latency = (now - pts_timestamp) * 1000
+        if inference_timestamp > 0:
+            inference_time = inference_timestamp / 1_000_000.0
 
         success, map_info = buf.map(Gst.MapFlags.READ)
         if success:
@@ -235,7 +275,7 @@ class ImageAnalyticsEngine:
             else:
                 ai_results = {"people": False, "fatigue": None, "raw": None}
             
-            self.measure_real_fps()
+            self.measure_pipeline_metrics(inference_time, pipeline_latency)
             buf.unmap(map_info)
 
             if ai_results["people"]:
@@ -253,14 +293,101 @@ class ImageAnalyticsEngine:
         log.error(f"GStreamer Error: {err.message}")
         log.error(f"Debug details: {debug}")
     
-    # Measure real FPS
-    def measure_real_fps(self):
+    # Measure pipeline FPS
+    def measure_pipeline_metrics(self, inference_time=0, pipeline_latency=0):
+        # Pipeline FPS
         self.result_count += 1
         if time.time() - self.last_time > 1:
-            log.info("Real FPS: %d", self.result_count)
-            self.real_fps = self.result_count
+            if not self.debug_mode:
+                log.info("Pipeline FPS: %d", self.result_count)
+            with self.metrics_lock:
+                self.pipeline_fps = self.result_count
             self.result_count = 0
             self.last_time = time.time()
+
+        with self.metrics_lock:
+            # Inference time
+            if inference_time > 0:
+                if self.avg_inference_time == 0:
+                    self.avg_inference_time = inference_time
+                else:
+                    self.avg_inference_time = (self.avg_inference_time * 0.9) + (inference_time * 0.1)
+
+            # Pipeline latency
+            if pipeline_latency > 0:
+                if self.avg_pipeline_latency == 0:
+                    self.avg_pipeline_latency = pipeline_latency
+                else:
+                    self.avg_pipeline_latency = (self.avg_pipeline_latency * 0.9) + (pipeline_latency * 0.1)
+
+    def evaluate_pipeline_status(self):
+        # --- Metrics ---
+        # 1. CPU Temp
+        try:
+            temp = psutil.sensors_temperatures()['cpu_thermal'][0].current
+        except:
+            temp = 0
+        
+        # 2. CPU Usage
+        cpu_usage = psutil.cpu_percent(interval=None)
+        
+        # 3. RAM Usage
+        ram = psutil.virtual_memory()
+
+        # --- Evaluations ---
+        is_critical = False
+        status_msg = []
+        if temp > 80:
+            is_critical = True
+            status_msg.append(f"CRITICAL TEMP: {temp}°C")
+        elif temp > 70:
+            log.warning(f"High Temperature Warning: {temp}°C")
+
+        if cpu_usage > 95:
+            is_critical = True
+            status_msg.append(f"CPU OVERLOAD: {cpu_usage}%")
+        elif cpu_usage > 85:
+            log.warning(f"High CPU Usage: {cpu_usage}% - Pipeline might lag.")
+
+        if ram.percent > 90:
+            is_critical = True
+            status_msg.append(f"LOW MEMORY: {ram.percent}%")
+
+        if is_critical:
+            try:
+                clock_raw = subprocess.check_output(["vcgencmd", "measure_clock", "arm"]).decode().strip()
+                clock_mhz = int(clock_raw.split('=')[1]) / 1_000_000
+                
+                volts = subprocess.check_output(["vcgencmd", "measure_volts", "core"]).decode().strip()
+                
+                # Throttled Status
+                # 0x0: Normal
+                # 0x50000: Previously throttled due to overheating
+                # 0x50005: Currently throttled and power supply is insufficient
+                throttled = subprocess.check_output(["vcgencmd", "get_throttled"]).decode().strip()
+
+                if is_critical:
+                    log.error(f"DIAGNOSTICS: Clock: {clock_mhz}MHz | {volts} | Status: {throttled}")
+                    if "0x" in throttled and throttled != "throttled=0x0":
+                        log.error("SYSTEM ALERT: Hardware throttling detected! Check Power Supply or Cooling.")
+                        with self.critical_lock:
+                            self.is_critical = True
+                        return is_critical
+            except Exception as e:
+                log.debug(f"Could not run vcgencmd: {e}")
+
+        # Print status
+        if self.debug_mode:
+            log.info(f"--- PIPELINE STATUS ---")
+            log.info(f"CPU: {cpu_usage}% | Temp: {temp}°C | RAM: {ram.percent}%")
+            with self.metrics_lock:
+                log.info(f"Camera FPS: {self.fps} | Pipeline FPS: {self.pipeline_fps}")
+                log.info(f"AI Latency: {self.avg_inference_time:.2f}ms | Pipeline Latency: {self.avg_pipeline_latency:.2f}ms")
+            if is_critical:
+                log.error(f"CRITICAL STATUS: {' | '.join(status_msg)}")
+            log.info("-" * 30)
+
+        return is_critical
 
     #  Main loop
     def _main_loop(self):
@@ -290,7 +417,6 @@ class ImageAnalyticsEngine:
                             <svg width="{self.width}" height="{self.height}">
                                 <rect x="{x}" y="{y}" width="{w}" height="{h}" 
                                 style="fill:none;stroke:lime;stroke-width:3" />
-                                <text x="{x}" y="{y-10}" fill="lime" font-size="20">FACE DETECTED</text>
                             </svg>
                             """
                         
@@ -306,6 +432,15 @@ class ImageAnalyticsEngine:
                     if self.debug_mode and self.overlay:
                         self.overlay.set_property("data", "")
                     log.info("Waiting for face detection...")
+
+    def _monitor_loop(self):
+        while not self._stop_event.is_set():
+            is_critical = self.evaluate_pipeline_status()
+            
+            if is_critical:
+                break
+            
+            self._stop_event.wait(5)
 
 def create_anchors(width=128, height=128):
     anchors = []
@@ -367,10 +502,18 @@ if __name__ == "__main__":
         engine.start()
         
         while True:
-            time.sleep(1)
+            with engine.critical_lock:
+                if engine.is_critical:
+                    log.info("Critical status detected, stopping engine...")
+                    engine.stop()
+                    break
+            time.sleep(5)
     except KeyboardInterrupt:
         log.info("Interrupted by keyboard")
     except Exception as e:
         log.exception("Unexpected error occurred: %s", e)
     finally:
-        engine.stop()
+        if engine.running:
+            engine.stop()
+        else:
+            log.info("Skipping stop as engine is not running")
