@@ -251,16 +251,18 @@ class ImageAnalyticsEngine:
         if sample is None:
             return Gst.FlowReturn.OK
 
-        now = time.time()
         buf = sample.get_buffer()
-        # PTS - Presentation Timestamp
-        pts_timestamp = buf.pts / Gst.SECOND
-        inference_timestamp = buf.get_duration()
+        
+        clock = self.pipeline.get_clock()
+        base_time = self.pipeline.get_base_time()
 
         pipeline_latency = 0
+        if clock and buf.pts != Gst.CLOCK_TIME_NONE:
+            current_pipeline_time = clock.get_time() - base_time
+            pipeline_latency = (current_pipeline_time - buf.pts) / Gst.MSECOND
+
         inference_time = 0
-        if pts_timestamp > 0:
-            pipeline_latency = (now - pts_timestamp) * 1000
+        inference_timestamp = 0
         if inference_timestamp > 0:
             inference_time = inference_timestamp / 1_000_000.0
 
