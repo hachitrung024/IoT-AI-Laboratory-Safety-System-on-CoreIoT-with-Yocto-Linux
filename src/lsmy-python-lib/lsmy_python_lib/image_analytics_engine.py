@@ -436,11 +436,19 @@ class ImageAnalyticsEngine:
                     if self.debug_mode and self.overlay:
                         decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
                         if decoded:
-                            x, y, w, h = decoded
+                            x, y, w, h, landmarks = decoded
+
+                            svg_content = ""
+                            for kx, ky in landmarks:
+                                svg_content += f'<circle cx="{kx}" cy="{ky}" r="3" fill="red" stroke="white" stroke-width="1" />'
+
                             svg_data = f"""
                             <svg width="{self.width}" height="{self.height}">
                                 <rect x="{x}" y="{y}" width="{w}" height="{h}" 
                                 style="fill:none;stroke:lime;stroke-width:3" />
+                                <rect x="5" y="5" width="160" height="65" rx="5" fill="black" fill-opacity="0.5" />
+                                <text x="15" y="25" font-family="monospace" font-size="14" fill="white">FPS: {self.pipeline_fps}</text>
+                                {svg_content}
                             </svg>
                             """
                         
@@ -513,8 +521,19 @@ def decode_blazeface(raw_data, score_threshold=0.75, width=640, height=480):
     
     x = cx - w/2
     y = cy - h/2
+
+    # 6 Landmarks
+    landmarks = []
+    for i in range(6):
+        ky_raw = raw_box[4 + i*2]
+        kx_raw = raw_box[4 + i*2 + 1]
+        
+        kx = (kx_raw / 128.0 + anchor[0]) * width
+        ky = (ky_raw / 128.0 + anchor[1]) * height
+        
+        landmarks.append((kx, ky))
     
-    return x, y, w, h
+    return x, y, w, h, landmarks
 
 if __name__ == "__main__":
     model_path = "/usr/share/models/blaze_face_short_range.tflite"
