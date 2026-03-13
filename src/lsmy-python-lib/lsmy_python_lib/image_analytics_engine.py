@@ -57,6 +57,8 @@ class ImageAnalyticsEngine:
         self.infer_start = None
         self.infer_end = None
 
+        self.q_infer_time = Gst.Quark.from_string("infer_time")
+
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
         self._main_thread = threading.Thread(target=self._main_loop, daemon=True)
@@ -203,9 +205,9 @@ class ImageAnalyticsEngine:
                     f"video/x-raw,width=128,height=128,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"identity name=infer_start ! "
+                    f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
-                    f"identity name=infer_end ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
 
@@ -307,10 +309,10 @@ class ImageAnalyticsEngine:
         log.error(f"Debug details: {debug}")
 
     def on_infer_start(self, element, buffer):
-        buffer.qdata = time.time()
+        buffer.set_qdata(self.q_infer_time, time.time())
 
     def on_infer_end(self, element, buffer):
-        start = getattr(buffer, "qdata", None)
+        start = buffer.get_qdata(self.q_infer_time)
         if start:
             self.inference_time = (time.time() - start) * 1000
     
