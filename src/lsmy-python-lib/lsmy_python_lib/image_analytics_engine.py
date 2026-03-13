@@ -161,7 +161,6 @@ class ImageAnalyticsEngine:
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
-                    f"tensor_decoder mode=bounding_boxes option1=blazeface ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
 
@@ -177,7 +176,6 @@ class ImageAnalyticsEngine:
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
-                    f"tensor_decoder mode=bounding_boxes option1=blazeface ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
         else:
@@ -230,7 +228,7 @@ class ImageAnalyticsEngine:
         if success:
             # res_array = np.frombuffer(map_info.data, dtype=np.float32)
             res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
-            log.info("Detection data: %s", res_array)
+            # log.info("Detection data: %s", res_array)
             
             if len(res_array) > 0:
                 ai_results = {"people": True, "fatigue": None, "raw": res_array}
@@ -309,18 +307,54 @@ class ImageAnalyticsEngine:
                         self.overlay.set_property("data", "")
                     log.info("Waiting for face detection...")
 
+def create_anchors(width=128, height=128):
+    anchors = []
+    
+    # Grid 16x16
+    for y in range(16):
+        for x in range(16):
+            for _ in range(2):
+                anchors.append([(x + 0.5) / 16.0, (y + 0.5) / 16.0])
+    # Grid 8x8
+    for y in range(8):
+        for x in range(8):
+            for _ in range(6):
+                anchors.append([(x + 0.5) / 8.0, (y + 0.5) / 8.0])
+                
+    return np.array(anchors)
+
+MY_ANCHORS = create_anchors()
+
 def decode_blazeface(raw_data, score_threshold=0.75, width=640, height=480):
     """
     Decode the array 15,232 into face coordinates. (x, y, w, h)
     """
-    if len(raw_data) >= 4:
-        x = raw_data[0]
-        y = raw_data[1]
-        w = raw_data[2]
-        h = raw_data[3]
-    else:
+    # Split the array: the first 14,336 numbers are Box, and the remaining 896 numbers are Score.
+    boxes = raw_data[:14336].reshape(896, 16)
+    scores = raw_data[14336:]
+    
+    sigmoid_scores = 1 / (1 + np.exp(-scores))
+    
+    best_idx = np.argmax(sigmoid_scores)
+    
+    if sigmoid_scores[best_idx] < score_threshold:
+        return None
+            
+    if best_idx == -1:
         return None
 
+    raw_box = boxes[best_idx]
+    anchor = MY_ANCHORS[best_idx]
+    
+    # Scale to Pixel
+    cx = (raw_box[1] / 128.0 + anchor[0]) * width
+    cy = (raw_box[0] / 128.0 + anchor[1]) * height
+    w = (raw_box[3] / 128.0) * width
+    h = (raw_box[2] / 128.0) * height
+    
+    x = cx - w/2
+    y = cy - h/2
+    
     return x, y, w, h
 
 if __name__ == "__main__":
