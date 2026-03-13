@@ -434,44 +434,45 @@ class ImageAnalyticsEngine:
                 raw_data = result.get("raw")
                 is_people = result.get("people")
 
-                if is_people and raw_data is not None:
-                    # Debug display
-                    now = time.time()
-                    if self.debug_mode and self.overlay and (now - self.overlay_update_time > 0.1):
-                        decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
-                        if decoded:
-                            x, y, w, h, landmarks = decoded
+                now = time.time()
+                if now - self.overlay_update_time > 0.1:
+                    if is_people and raw_data is not None:
+                        # Debug display
+                        if self.debug_mode and self.overlay:
+                            decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
+                            if decoded:
+                                x, y, w, h, landmarks = decoded
 
-                            svg_content = ""
-                            for kx, ky in landmarks:
-                                svg_content += f'<circle cx="{kx}" cy="{ky}" r="3" fill="red" stroke="white" stroke-width="1" />'
+                                svg_content = ""
+                                for kx, ky in landmarks:
+                                    svg_content += f'<circle cx="{kx}" cy="{ky}" r="3" fill="red" stroke="white" stroke-width="1" />'
 
-                            svg_data = f"""
-                            <svg width="{self.width}" height="{self.height}">
-                                <rect x="{x}" y="{y}" width="{w}" height="{h}" 
-                                style="fill:none;stroke:lime;stroke-width:3" />
-                                <rect x="5" y="5" width="250" height="75" rx="5" fill="black" fill-opacity="0.5" />
-                                <text x="15" y="25" font-family="monospace" font-size="14" fill="white">FPS: {self.pipeline_fps}</text>
-                                <text x="15" y="45" font-family="monospace" font-size="14" fill="white">AI Latency: {self.avg_inference_time:.2f} ms</text>
-                                <text x="15" y="65" font-family="monospace" font-size="14" fill="white">Pipeline Latency: {self.avg_pipeline_latency:.2f} ms</text>
-                                {svg_content}
-                            </svg>
-                            """
-                        
-                            self.overlay.set_property("data", svg_data)
+                                svg_data = f"""
+                                <svg width="{self.width}" height="{self.height}">
+                                    <rect x="{x}" y="{y}" width="{w}" height="{h}" 
+                                    style="fill:none;stroke:lime;stroke-width:3" />
+                                    <rect x="5" y="5" width="250" height="75" rx="5" fill="black" fill-opacity="0.5" />
+                                    <text x="15" y="25" font-family="monospace" font-size="14" fill="white">FPS: {self.pipeline_fps}</text>
+                                    <text x="15" y="45" font-family="monospace" font-size="14" fill="white">AI Latency: {self.avg_inference_time:.2f} ms</text>
+                                    <text x="15" y="65" font-family="monospace" font-size="14" fill="white">Pipeline Latency: {self.avg_pipeline_latency:.2f} ms</text>
+                                    {svg_content}
+                                </svg>
+                                """
+                            
+                                self.overlay.set_property("data", svg_data)
+                            else:
+                                self.overlay.set_property("data", "")
+                            self.overlay_update_time = now
                         else:
-                            self.overlay.set_property("data", "")
-                        self.overlay_update_time = now
+                            log.info("--- [AI DATA] ---")
+                            log.info(f"Number of data: {len(raw_data)}")
+                            log.info(f"First 5 data: {raw_data[:5]}")
+                            log.info("-" * 30)
                     else:
-                        log.info("--- [AI DATA] ---")
-                        log.info(f"Number of data: {len(raw_data)}")
-                        log.info(f"First 5 data: {raw_data[:5]}")
-                        log.info("-" * 30)
-                else:
-                    if self.debug_mode and self.overlay and (now - self.overlay_update_time > 0.1):
-                        self.overlay.set_property("data", "")
-                        self.overlay_update_time = now
-                    log.info("Waiting for face detection...")
+                        if self.debug_mode and self.overlay:
+                            self.overlay.set_property("data", "")
+                            self.overlay_update_time = now
+                        # log.info("Waiting for face detection...")
 
     def _monitor_loop(self):
         while not self._stop_event.is_set():
