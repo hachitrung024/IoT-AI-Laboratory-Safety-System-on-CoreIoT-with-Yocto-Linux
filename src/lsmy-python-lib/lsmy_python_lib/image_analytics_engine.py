@@ -78,6 +78,8 @@ class ImageAnalyticsEngine:
         self.inference_time = 0.0
         self.pipeline_latency = 0.0
 
+        self.overlay_update_time = 0
+
         self.result_queue = Queue(maxsize=1)
 
         self.running = False
@@ -434,7 +436,8 @@ class ImageAnalyticsEngine:
 
                 if is_people and raw_data is not None:
                     # Debug display
-                    if self.debug_mode and self.overlay:
+                    now = time.time()
+                    if self.debug_mode and self.overlay and (now - self.overlay_update_time > 0.1):
                         decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
                         if decoded:
                             x, y, w, h, landmarks = decoded
@@ -458,14 +461,16 @@ class ImageAnalyticsEngine:
                             self.overlay.set_property("data", svg_data)
                         else:
                             self.overlay.set_property("data", "")
+                        self.overlay_update_time = now
                     else:
                         log.info("--- [AI DATA] ---")
                         log.info(f"Number of data: {len(raw_data)}")
                         log.info(f"First 5 data: {raw_data[:5]}")
                         log.info("-" * 30)
                 else:
-                    if self.debug_mode and self.overlay:
+                    if self.debug_mode and self.overlay and (now - self.overlay_update_time > 0.1):
                         self.overlay.set_property("data", "")
+                        self.overlay_update_time = now
                     log.info("Waiting for face detection...")
 
     def _monitor_loop(self):
