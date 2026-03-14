@@ -79,7 +79,9 @@ class ImageAnalyticsEngine:
         self.pipeline_latency = 0.0
 
         self.overlay_update_time = 0
-        self.overlay_busy = False
+
+        self.current_bbox = None
+        self.current_landmarks = None
 
         self.result_queue = Queue(maxsize=1)
 
@@ -133,6 +135,7 @@ class ImageAnalyticsEngine:
             if self.debug_mode:
                 self.infer_start.connect("handoff", self.on_infer_start)
                 self.infer_end.connect("handoff", self.on_infer_end)
+                self.overlay.connect("draw", self.on_draw_overlay)
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
@@ -205,7 +208,7 @@ class ImageAnalyticsEngine:
                 pipeline += (
                     # Split pipeline into two branches
                     f"tee name=t "
-                    f"t. ! queue leaky=downstream ! "
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoscale ! "
                     f"video/x-raw,width=128,height=128,format=RGB ! "
                     f"tensor_converter ! "
@@ -218,8 +221,8 @@ class ImageAnalyticsEngine:
 
                 # Branch 2: Debug display
                 pipeline += (
-                    f"t. ! queue leaky=downstream ! videoconvert ! rsvgoverlay name=overlay ! "
-                    f"videoconvert ! autovideosink sync=false "
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! cairooverlay name=overlay ! "
+                    f"autovideosink sync=false "
                 )
             else:
                 pipeline += (
@@ -323,6 +326,43 @@ class ImageAnalyticsEngine:
         start = self._infer_timestamps.pop(buffer.pts, None)
         if start:
             self.inference_time = (time.time() - start) * 1000
+
+    def on_draw_overlay(self, overlay, context, timestamp, duration):
+        if self.current_bbox is None:
+            return
+
+        x, y, w, h = self.current_bbox
+
+        # draw bounding box
+        context.set_source_rgb(0, 1, 0)
+        context.set_line_width(3)
+        context.rectangle(x, y, w, h)
+        context.stroke()
+
+        # draw landmarks
+        if self.current_landmarks:
+            context.set_source_rgb(1, 0, 0)
+            for kx, ky in self.current_landmarks:
+                context.arc(kx, ky, 3, 0, 2 * 3.1416)
+                context.fill()
+
+        # draw info panel
+        context.set_source_rgba(0, 0, 0, 0.5)
+        context.rectangle(5, 5, 250, 75)
+        context.fill()
+
+        context.set_source_rgb(1, 1, 1)
+        context.select_font_face("monospace", 0, 0)
+        context.set_font_size(14)
+
+        context.move_to(15, 25)
+        context.show_text(f"FPS: {self.pipeline_fps}")
+
+        context.move_to(15, 45)
+        context.show_text(f"AI Latency: {self.avg_inference_time:.2f} ms")
+
+        context.move_to(15, 65)
+        context.show_text(f"Pipeline Latency: {self.avg_pipeline_latency:.2f} ms")
     
     # Measure pipeline FPS
     def measure_pipeline_metrics(self, inference_time=0, pipeline_latency=0):
@@ -419,11 +459,6 @@ class ImageAnalyticsEngine:
             log.info("-" * 30)
 
         return is_critical
-    
-    def update_overlay(self, svg_data=None):
-        self.overlay.set_property("data", svg_data)
-        self.overlay_busy = False
-        return False
 
     #  Main loop
     def _main_loop(self):
@@ -452,30 +487,11 @@ class ImageAnalyticsEngine:
                             decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
                             if decoded:
                                 x, y, w, h, landmarks = decoded
-
-                                svg_content = ""
-                                for kx, ky in landmarks:
-                                    svg_content += f'<circle cx="{kx}" cy="{ky}" r="3" fill="red" stroke="white" stroke-width="1" />'
-
-                                svg_data = f"""
-                                <svg width="{self.width}" height="{self.height}">
-                                    <rect x="{x}" y="{y}" width="{w}" height="{h}" 
-                                    style="fill:none;stroke:lime;stroke-width:3" />
-                                    <rect x="5" y="5" width="250" height="75" rx="5" fill="black" fill-opacity="0.5" />
-                                    <text x="15" y="25" font-family="monospace" font-size="14" fill="white">FPS: {self.pipeline_fps}</text>
-                                    <text x="15" y="45" font-family="monospace" font-size="14" fill="white">AI Latency: {self.avg_inference_time:.2f} ms</text>
-                                    <text x="15" y="65" font-family="monospace" font-size="14" fill="white">Pipeline Latency: {self.avg_pipeline_latency:.2f} ms</text>
-                                    {svg_content}
-                                </svg>
-                                """
-
-                                if not self.overlay_busy:
-                                    self.overlay_busy = True
-                                    GLib.idle_add(self.update_overlay, svg_data)
+                                self.current_bbox = (x, y, w, h)
+                                self.current_landmarks = landmarks
                             else:
-                                if not self.overlay_busy:
-                                    self.overlay_busy = True
-                                    GLib.idle_add(self.update_overlay, "")
+                                self.current_bbox = None
+                                self.current_landmarks = None
                         else:
                             # log.info("--- [AI DATA] ---")
                             # log.info(f"Number of data: {len(raw_data)}")
@@ -483,9 +499,8 @@ class ImageAnalyticsEngine:
                             # log.info("-" * 30)
                             pass
                     else:
-                        if not self.overlay_busy:
-                                    self.overlay_busy = True
-                                    GLib.idle_add(self.update_overlay, "")
+                        self.current_bbox = None
+                        self.current_landmarks = None
 
     def _monitor_loop(self):
         while not self._stop_event.is_set():
