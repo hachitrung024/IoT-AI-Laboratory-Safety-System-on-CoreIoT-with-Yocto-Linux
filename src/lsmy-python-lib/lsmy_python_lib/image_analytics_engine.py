@@ -268,7 +268,7 @@ class ImageAnalyticsEngine:
         Convert sample -> numpy array and extract metadata.
         """
         # log.info("Received new sample from appsink")
-        log.info("DEBUG: Received new sample from appsink")
+        # log.info("DEBUG: Received new sample from appsink")
         sample = appsink.emit("pull-sample")
         if sample is None:
             return Gst.FlowReturn.OK
@@ -284,30 +284,35 @@ class ImageAnalyticsEngine:
             pipeline_latency = (current_pipeline_time - buf.pts) / Gst.MSECOND
 
         success, map_info = buf.map(Gst.MapFlags.READ)
-        log.info("DEBUG: Mapped buffer")
+        # log.info("DEBUG: Mapped buffer")
         if success:
             # res_array = np.frombuffer(map_info.data, dtype=np.float32)
-            log.info("DEBUG: Prepared copy data")
-            res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
-            # log.info("Detection data: %s", res_array)
-            
-            if len(res_array) > 0:
-                ai_results = {"people": True, "fatigue": None, "raw": res_array}
-            else:
-                ai_results = {"people": False, "fatigue": None, "raw": None}
-            
-            self.measure_pipeline_metrics(self.inference_time, pipeline_latency)
-            buf.unmap(map_info)
-            log.info("DEBUG: Unmapped buffer")
+            # log.info("DEBUG: Prepared copy data")
+            try:
+                res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
+                # log.info("Detection data: %s", res_array)
+                
+                if len(res_array) > 0:
+                    ai_results = {"people": True, "fatigue": None, "raw": res_array}
+                else:
+                    ai_results = {"people": False, "fatigue": None, "raw": None}
+                
+                self.measure_pipeline_metrics(self.inference_time, pipeline_latency)
+                buf.unmap(map_info)
+                # log.info("DEBUG: Unmapped buffer")
 
-            if ai_results["people"]:
-                if self.result_queue.full():
-                    try:
-                        self.result_queue.get_nowait()
-                    except:
-                        pass
-                self.result_queue.put(ai_results)
-            log.info("DEBUG: Put result in queue")
+                if ai_results["people"]:
+                    if self.result_queue.full():
+                        try:
+                            self.result_queue.get_nowait()
+                        except:
+                            pass
+                    self.result_queue.put(ai_results)
+                # log.info("DEBUG: Put result in queue")
+            except Exception as e:
+                log.error("Error processing inference result: %s", e)
+            finally: 
+                buf.unmap(map_info)
 
         return Gst.FlowReturn.OK
     
@@ -425,7 +430,7 @@ class ImageAnalyticsEngine:
     def _main_loop(self):
         while not self._stop_event.is_set():
             result = None
-            log.info("DEBUG: Checking result queue")
+            # log.info("DEBUG: Checking result queue")
             try:
                 result = self.result_queue.get(timeout=1)
             except queue.Empty:
@@ -433,7 +438,7 @@ class ImageAnalyticsEngine:
             except Exception as e:
                 log.warning("Error getting result from queue %s", e)
 
-            log.info("DEBUG: After Checking result queue")
+            # log.info("DEBUG: After Checking result queue")
 
             if self._stop_event.is_set():
                 break
