@@ -111,9 +111,9 @@ class ImageAnalyticsEngine:
                 raise RuntimeError("appsink element not found in pipeline")
             if self.overlay is None and self.debug_mode:
                 raise RuntimeError("overlay element not found in pipeline")
-            if self.infer_start is None:
+            if self.infer_start is None and self.debug_mode:
                 raise RuntimeError("infer_start element not found in pipeline")
-            if self.infer_end is None:
+            if self.infer_end is None and self.debug_mode:
                 raise RuntimeError("infer_end element not found in pipeline")
             
             bus = self.pipeline.get_bus()
@@ -129,8 +129,9 @@ class ImageAnalyticsEngine:
             self.appsink.connect("new-sample", self.on_new_sample)
 
             # Connect signal: AI inference
-            self.infer_start.connect("handoff", self.on_infer_start)
-            self.infer_end.connect("handoff", self.on_infer_end)
+            if self.debug_mode:
+                self.infer_start.connect("handoff", self.on_infer_start)
+                self.infer_end.connect("handoff", self.on_infer_end)
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
@@ -567,13 +568,19 @@ if __name__ == "__main__":
         help="Camera FPS (default: 15)"
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode for detailed logging and visualization"
+    )
+
     args = parser.parse_args()
 
     model_path = "/usr/share/models/blaze_face_short_range.tflite"
 
     engine = ImageAnalyticsEngine(width=640, height=480, fps=args.fps,
                                model_path=model_path,
-                               use_model=True, debug_mode=True)
+                               use_model=True, debug_mode=args.debug)
     try:
         engine.start()
         
