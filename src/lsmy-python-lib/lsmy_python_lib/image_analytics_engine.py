@@ -114,9 +114,9 @@ class ImageAnalyticsEngine:
                 raise RuntimeError("appsink element not found in pipeline")
             if self.overlay is None and self.debug_mode:
                 raise RuntimeError("overlay element not found in pipeline")
-            if self.infer_start is None and self.debug_mode:
+            if self.infer_start is None and self.use_model:
                 raise RuntimeError("infer_start element not found in pipeline")
-            if self.infer_end is None and self.debug_mode:
+            if self.infer_end is None and self.use_model:
                 raise RuntimeError("infer_end element not found in pipeline")
             
             bus = self.pipeline.get_bus()
@@ -132,9 +132,10 @@ class ImageAnalyticsEngine:
             self.appsink.connect("new-sample", self.on_new_sample)
 
             # Connect signal: AI inference
-            if self.debug_mode:
+            if self.use_model:
                 self.infer_start.connect("handoff", self.on_infer_start)
                 self.infer_end.connect("handoff", self.on_infer_end)
+            if self.debug_mode:
                 self.overlay.connect("draw", self.on_draw_overlay)
 
             # Start pipeline in a dedicated thread with GLib MainLoop
@@ -230,7 +231,9 @@ class ImageAnalyticsEngine:
                     f"video/x-raw,width=128,height=128,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
         else:
@@ -369,8 +372,6 @@ class ImageAnalyticsEngine:
         # Pipeline FPS
         self.result_count += 1
         if time.time() - self.last_time > 1:
-            if not self.debug_mode:
-                log.info("Pipeline FPS: %d", self.result_count)
             with self.metrics_lock:
                 self.pipeline_fps = self.result_count
             self.result_count = 0
@@ -448,15 +449,14 @@ class ImageAnalyticsEngine:
                 log.debug(f"Could not run vcgencmd: {e}")
 
         # Print status
-        if self.debug_mode:
-            log.info(f"--- PIPELINE STATUS ---")
-            log.info(f"CPU: {cpu_usage}% | Temp: {temp}°C | RAM: {ram.percent}%")
-            with self.metrics_lock:
-                log.info(f"Camera FPS: {self.fps} | Pipeline FPS: {self.pipeline_fps}")
-                log.info(f"AI Latency: {self.avg_inference_time:.2f}ms | Pipeline Latency: {self.avg_pipeline_latency:.2f}ms")
-            if is_critical:
-                log.error(f"CRITICAL STATUS: {' | '.join(status_msg)}")
-            log.info("-" * 30)
+        log.info(f"--- PIPELINE STATUS ---")
+        log.info(f"CPU: {cpu_usage}% | Temp: {temp}°C | RAM: {ram.percent}%")
+        with self.metrics_lock:
+            log.info(f"Camera FPS: {self.fps} | Pipeline FPS: {self.pipeline_fps}")
+            log.info(f"AI Latency: {self.avg_inference_time:.2f}ms | Pipeline Latency: {self.avg_pipeline_latency:.2f}ms")
+        if is_critical:
+            log.error(f"CRITICAL STATUS: {' | '.join(status_msg)}")
+        log.info("-" * 30)
 
         return is_critical
 
