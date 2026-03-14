@@ -79,6 +79,7 @@ class ImageAnalyticsEngine:
         self.pipeline_latency = 0.0
 
         self.overlay_update_time = 0
+        self.overlay_busy = False
 
         self.result_queue = Queue(maxsize=1)
 
@@ -269,7 +270,6 @@ class ImageAnalyticsEngine:
         Convert sample -> numpy array and extract metadata.
         """
         # log.info("Received new sample from appsink")
-        # log.info("DEBUG: Received new sample from appsink")
         sample = appsink.emit("pull-sample")
         if sample is None:
             return Gst.FlowReturn.OK
@@ -285,13 +285,9 @@ class ImageAnalyticsEngine:
             pipeline_latency = (current_pipeline_time - buf.pts) / Gst.MSECOND
 
         success, map_info = buf.map(Gst.MapFlags.READ)
-        # log.info("DEBUG: Mapped buffer")
         if success:
-            # res_array = np.frombuffer(map_info.data, dtype=np.float32)
-            # log.info("DEBUG: Prepared copy data")
             try:
                 res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
-                # log.info("Detection data: %s", res_array)
                 
                 if len(res_array) > 0:
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
@@ -299,8 +295,6 @@ class ImageAnalyticsEngine:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
                 
                 self.measure_pipeline_metrics(self.inference_time, pipeline_latency)
-                buf.unmap(map_info)
-                # log.info("DEBUG: Unmapped buffer")
 
                 if ai_results["people"]:
                     if self.result_queue.full():
@@ -309,7 +303,6 @@ class ImageAnalyticsEngine:
                         except:
                             pass
                     self.result_queue.put(ai_results)
-                # log.info("DEBUG: Put result in queue")
             except Exception as e:
                 log.error("Error processing inference result: %s", e)
             finally: 
@@ -426,20 +419,22 @@ class ImageAnalyticsEngine:
             log.info("-" * 30)
 
         return is_critical
+    
+    def update_overlay(self, svg_data=None):
+        self.overlay.set_property("data", svg_data)
+        self.overlay_busy = False
+        return False
 
     #  Main loop
     def _main_loop(self):
         while not self._stop_event.is_set():
             result = None
-            # log.info("DEBUG: Checking result queue")
             try:
                 result = self.result_queue.get(timeout=1)
             except queue.Empty:
                 pass
             except Exception as e:
                 log.warning("Error getting result from queue %s", e)
-
-            # log.info("DEBUG: After Checking result queue")
 
             if self._stop_event.is_set():
                 break
@@ -450,6 +445,7 @@ class ImageAnalyticsEngine:
 
                 now = time.time()
                 if now - self.overlay_update_time > 0.1:
+                    self.overlay_update_time = now
                     if is_people and raw_data is not None:
                         # Debug display
                         if self.debug_mode and self.overlay:
@@ -472,21 +468,24 @@ class ImageAnalyticsEngine:
                                     {svg_content}
                                 </svg>
                                 """
-                            
-                                GLib.idle_add(self.overlay.set_property, "data", svg_data)
+
+                                if not self.overlay_busy:
+                                    self.overlay_busy = True
+                                    GLib.idle_add(self.update_overlay, svg_data)
                             else:
-                                GLib.idle_add(self.overlay.set_property, "data", "")
-                            self.overlay_update_time = now
+                                if not self.overlay_busy:
+                                    self.overlay_busy = True
+                                    GLib.idle_add(self.update_overlay, "")
                         else:
-                            log.info("--- [AI DATA] ---")
-                            log.info(f"Number of data: {len(raw_data)}")
-                            log.info(f"First 5 data: {raw_data[:5]}")
-                            log.info("-" * 30)
+                            # log.info("--- [AI DATA] ---")
+                            # log.info(f"Number of data: {len(raw_data)}")
+                            # log.info(f"First 5 data: {raw_data[:5]}")
+                            # log.info("-" * 30)
+                            pass
                     else:
-                        if self.debug_mode and self.overlay:
-                            GLib.idle_add(self.overlay.set_property, "data", "")
-                            self.overlay_update_time = now
-                        # log.info("Waiting for face detection...")
+                        if not self.overlay_busy:
+                                    self.overlay_busy = True
+                                    GLib.idle_add(self.update_overlay, "")
 
     def _monitor_loop(self):
         while not self._stop_event.is_set():
