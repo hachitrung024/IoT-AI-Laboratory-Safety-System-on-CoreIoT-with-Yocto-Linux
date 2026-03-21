@@ -201,7 +201,6 @@ class ImageAnalyticsEngine:
             pipeline = (
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
-                f"videoconvert ! "
             )
             
             if self.debug_mode:
@@ -211,11 +210,13 @@ class ImageAnalyticsEngine:
                     f"tee name=t "
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoscale ! "
-                    f"video/x-raw,width=128,height=128,format=RGB ! "
+                    f"video/x-raw,width=128,height=128 ! "
+                    f"videoconvert ! "
+                    f"video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
@@ -228,11 +229,13 @@ class ImageAnalyticsEngine:
             else:
                 pipeline += (
                     f"videoscale ! "
-                    f"video/x-raw,width=128,height=128,format=RGB ! "
+                    f"video/x-raw,width=128,height=128 ! "
+                    f"videoconvert ! "
+                    f"video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
