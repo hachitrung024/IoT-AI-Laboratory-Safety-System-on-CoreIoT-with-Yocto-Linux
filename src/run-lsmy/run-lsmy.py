@@ -17,6 +17,7 @@
 #   - All logic must live inside lsmy-python-app package
 # =============================================================================
 
+import os
 import sys
 import ctypes
 import logging
@@ -25,6 +26,11 @@ from logging.handlers import RotatingFileHandler
 # -------------------------
 # Logging Configuration
 # -------------------------
+LOG_DIR = "/data/logs"
+
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",

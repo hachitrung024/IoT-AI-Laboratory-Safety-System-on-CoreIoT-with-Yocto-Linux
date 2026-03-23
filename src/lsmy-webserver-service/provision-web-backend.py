@@ -17,6 +17,11 @@ from lsmy_python_lib.ipc import send_connect_wifi_signal_ipc, send_request_get_d
 # ====== WIFI CONFIG LIBRARY ======
 from lsmy_python_lib.wifi_config_manager import configure_wifi
 
+LOG_DIR = "/data/logs"
+
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
