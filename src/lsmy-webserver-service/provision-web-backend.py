@@ -6,6 +6,7 @@ import asyncio
 import json
 import subprocess
 import logging
+from logging.handlers import RotatingFileHandler
 import websockets
 import gpiod
 from gpiod.line import Direction, Value
@@ -20,6 +21,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
+        RotatingFileHandler("/data/logs/provision-webserver-backend.log", maxBytes=1*1024*1024, backupCount=2),
         logging.StreamHandler(sys.stdout)
     ]
 )

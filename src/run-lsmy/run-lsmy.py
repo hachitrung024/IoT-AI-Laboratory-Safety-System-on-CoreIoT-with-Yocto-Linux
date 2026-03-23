@@ -20,6 +20,7 @@
 import sys
 import ctypes
 import logging
+from logging.handlers import RotatingFileHandler
 
 # -------------------------
 # Logging Configuration
@@ -28,6 +29,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
+        RotatingFileHandler("/data/logs/run-lsmy.log", maxBytes=1*1024*1024, backupCount=2),
         logging.StreamHandler(sys.stdout)
     ]
 )

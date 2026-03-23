@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import logging
+from logging.handlers import RotatingFileHandler
 import asyncio
 
 # ====== IPC LIBRARY ======
@@ -22,7 +23,10 @@ is_retry = True
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        RotatingFileHandler("/data/logs/camera-watchdog.log", maxBytes=1*1024*1024, backupCount=2),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 log = logging.getLogger("camera-watchdog")
 
