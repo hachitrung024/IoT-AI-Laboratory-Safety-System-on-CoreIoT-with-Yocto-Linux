@@ -118,7 +118,11 @@ def trigger_response():
     run_cmd_with_retry(
             ["systemctl", "stop", LSMY_SERVICE]
         )
-    # os.system("reboot")
+    
+    log.warning("System rebooting in 5 seconds...")
+    # time.sleep(5) 
+    
+    # subprocess.run(["reboot"])
 
 # -- Main --
 def main():
@@ -145,7 +149,6 @@ def main():
 
         if not ok_files or not ok_proc:
             trigger_response()
-            break
 
         time.sleep(CHECK_INTERVAL)
 
