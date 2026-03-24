@@ -81,8 +81,11 @@ def check_files(baseline):
             log.warning(f"File modified: {path}")
             failed_files.append(path)
 
-    if not failed_files and not missing_files:
-        log.info("Integrity check passed: All files are valid.")
+    if not failed_files:
+        if not missing_files:
+            log.info("Integrity check PASSED: All files are valid.")
+        else:
+            log.info(f"Integrity check PASSED: {len(missing_files)} missing.")
         return True
     else:
         log.error(f"Integrity check FAILED: {len(failed_files)} modified, {len(missing_files)} missing.")
