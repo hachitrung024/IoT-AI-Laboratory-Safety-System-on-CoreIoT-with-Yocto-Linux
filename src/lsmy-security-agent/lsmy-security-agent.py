@@ -118,9 +118,9 @@ LSMY_SERVICE = "run-lsmy.service"
 # Action when tampering detected
 def trigger_response():
     log.warning("Tamper detected -> Rebooting system....")
-    run_cmd_with_retry(
-            ["systemctl", "stop", LSMY_SERVICE]
-        )
+    # run_cmd_with_retry(
+    #         ["systemctl", "stop", LSMY_SERVICE]
+    #     )
     
     log.warning("System rebooting in 5 seconds...")
     # time.sleep(5) 
