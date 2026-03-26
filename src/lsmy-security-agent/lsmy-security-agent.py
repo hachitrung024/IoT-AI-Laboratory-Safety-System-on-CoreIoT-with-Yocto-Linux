@@ -128,7 +128,8 @@ def trigger_response(files_to_restore):
     log.info("Restoring system from backup...")
     log.info(f"Selective restore: {files_to_restore}")
     try:
-        cmd = ["tar", "-xPzf", GOLD_BACKUP, "--overwrite"] + files_to_restore
+        cleaned_files = [f.lstrip('/') for f in files_to_restore]
+        cmd = ["tar", "-xzvf", GOLD_BACKUP, "-C", "/", "--overwrite"] + cleaned_files
         subprocess.run(cmd, check=True)
         log.info("Restore successful!")
     except subprocess.CalledProcessError as e:
