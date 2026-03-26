@@ -11,8 +11,11 @@ from logging.handlers import RotatingFileHandler
 # ====== COMMAND RUNNER LIBRARY ======
 from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
 
+LSMY_SERVICE = "run-lsmy.service"
+
 BASELINE_FILE = "/etc/security/baseline.db"
 WHITELIST_FILE = "/etc/security/process_whitelist.txt"
+GOLD_BACKUP = "/etc/security/gold_backup.tar.gz"
 LOG_FILE = "/data/logs/security-agent.log"
 
 LOG_DIR = "/data/logs"
@@ -83,13 +86,13 @@ def check_files(baseline):
 
     if not failed_files:
         if not missing_files:
-            log.info("Integrity check PASSED: All files are valid.")
+            log.info("Integrity check passed: All files are valid.")
         else:
-            log.info(f"Integrity check PASSED: {len(missing_files)} missing.")
-        return True
+            log.info(f"Integrity check passed: Have {len(missing_files)} missing.")
+        return True, []
     else:
-        log.error(f"Integrity check FAILED: {len(failed_files)} modified, {len(missing_files)} missing.")
-        return False
+        log.error(f"Integrity check failed: {len(failed_files)} modified, {len(missing_files)} missing.")
+        return False, failed_files
 
 # Load whitelist process
 def load_whitelist():
@@ -113,45 +116,55 @@ def check_process(whitelist):
 
     return True
 
-LSMY_SERVICE = "run-lsmy.service"
-
 # Action when tampering detected
-def trigger_response():
-    log.warning("Tamper detected -> Rebooting system....")
-    # run_cmd_with_retry(
-    #         ["systemctl", "stop", LSMY_SERVICE]
-    #     )
+def trigger_response(files_to_restore):
+    log.warning("!!! TAMPERING DETECTED !!!")
+
+    log.warning("Stopping system services...")
+    run_cmd_with_retry(
+            ["systemctl", "stop", LSMY_SERVICE]
+        )
+    
+    log.info("Restoring system from backup...")
+    log.info(f"Selective restore: {files_to_restore}")
+    try:
+        cmd = ["tar", "-xPzf", GOLD_BACKUP, "--overwrite"] + files_to_restore
+        subprocess.run(cmd, check=True)
+        log.info("Restore successful!")
+    except subprocess.CalledProcessError as e:
+        log.error(f"Restore failed: {e}")
     
     log.warning("System rebooting in 5 seconds...")
-    # time.sleep(5) 
+    time.sleep(5) 
     
-    # subprocess.run(["reboot"])
+    # run_cmd(["sudo", "reboot"], check=False)
 
 # -- Main --
 def main():
     global CHECK_INTERVAL
-    log.info("Security agent service started")
+    log.info("========== STARTING SECURITY AGENT SERVICES ==========")
 
     baseline = load_baseline(BASELINE_FILE)
     # whitelist = load_whitelist()
 
     log.info(f"Monitoring {len(baseline)} files from baseline.")
+    # log.info(f"Monitoring {len(whitelist)} processes from whitelist.")
 
     while True:
         start_time = time.time()
 
-        ok_files = check_files(baseline)
+        ok_files, failed_files = check_files(baseline)
         # ok_proc = check_process(whitelist)
         ok_proc = True
 
         elapsed = time.time() - start_time
         if elapsed > CHECK_INTERVAL:
-            log.warning(f"Scan took {elapsed:.2f}s, which is longer than {CHECK_INTERVAL}s!")
+            log.warning(f"Scan took {elapsed:.2f}s, which is longer than {CHECK_INTERVAL}s check interval!")
             CHECK_INTERVAL = elapsed + 60*3
-            log.info(f"Updated CHECK_INTERVAL: {CHECK_INTERVAL}")
+            log.info(f"Updated check interval: {CHECK_INTERVAL}")
 
         if not ok_files or not ok_proc:
-            trigger_response()
+            trigger_response(failed_files)
 
         time.sleep(CHECK_INTERVAL)
 
