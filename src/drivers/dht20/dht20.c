@@ -262,7 +262,7 @@ static int dht20_probe(struct i2c_client *client)
 
 	res = dht20_read_values(data);
 	if (res < 0)
-		return res;
+		dev_warn(device, "initial read failed (%d), continue registering\n", res);
 
 	hwmon_dev = devm_hwmon_device_register_with_info(device,
 						 client->name,
