@@ -14,7 +14,7 @@ from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
 LSMY_SERVICE = "run-lsmy.service"
 
 BASELINE_FILE = "/etc/security/baseline.db"
-WHITELIST_FILE = "/etc/security/process_whitelist.txt"
+WHITELIST_FILE = "/etc/security/whitelist.txt"
 GOLD_BACKUP = "/etc/security/gold_backup.tar.gz"
 LOG_FILE = "/data/logs/security-agent.log"
 
@@ -94,50 +94,98 @@ def check_files(baseline):
         log.error(f"Integrity check failed: {len(failed_files)} modified, {len(missing_files)} missing.")
         return False, failed_files
 
-# Load whitelist process
+# Load whitelist of packages
 def load_whitelist():
     wl = set()
-    with open(WHITELIST_FILE) as f:
-        for line in f:
-            wl.add(line.strip())
+    try:
+        if not os.path.exists(WHITELIST_FILE):
+            log.error(f"Whitelist file not found at {WHITELIST_FILE}")
+            return wl
+        with open(WHITELIST_FILE, 'r') as f:
+            for line in f:
+                pkg = line.strip()
+                if pkg and not pkg.startswith('#'):
+                    wl.add(pkg)
+    except Exception as e:
+        log.error(f"Error loading whitelist: {e}")
     return wl
 
-def check_process(whitelist):
+def check_packages(whitelist):
+    intrusion_packages = []
     try:
-        ps = subprocess.check_output(["ps", "-eo", "comm"]).decode().splitlines()
-    except:
-        return False
+        result = subprocess.run(["opkg", "list-installed"], capture_output=True, text=True, check=True)
+        
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            
+            pkg_name = line.split(' - ')[0].strip()
 
-    for p in ps:
-        p = p.strip()
-        if p and p not in whitelist:
-            log.warning(f"Unknown process: {p}")
-            return False
+            if pkg_name not in whitelist:
+                if pkg_name.startswith('kernel') or pkg_name.startswith('libgcc') or \
+                   pkg_name in ['libc6', 'opkg', 'base-files', 'busybox', 'lsmy-security-agent']:
+                    continue
+                
+                log.warning(f"Unauthorized package detected: {pkg_name}")
+                intrusion_packages.append(pkg_name)
 
-    return True
+        if intrusion_packages:
+            log.error(f"Package integrity failed: {len(intrusion_packages)} unknown packages.")
+            return False, intrusion_packages
+
+    except subprocess.CalledProcessError as e:
+        log.error(f"Could not execute opkg: {e}")
+        return True, [] 
+    except Exception as e:
+        log.error(f"Error during package check: {e}")
+        return True, []
+
+    log.info("Package check passed: No unauthorized software found.")
+    return True, []
 
 # Action when tampering detected
-def trigger_response(files_to_restore):
-    log.warning("!!! TAMPERING DETECTED !!!")
-
-    log.warning("Stopping system services...")
+def trigger_response(files_to_restore, packages_to_uninstall):
+    log.warning("Detected tampering. Stopping system services...")
     run_cmd_with_retry(
             ["systemctl", "stop", LSMY_SERVICE]
         )
     
-    log.info("Restoring system from backup...")
-    log.info(f"Selective restore: {files_to_restore}")
-    try:
-        cleaned_files = [f.lstrip('/') for f in files_to_restore]
-        cmd = ["tar", "-xzvf", GOLD_BACKUP, "-C", "/", "--overwrite"] + cleaned_files
-        subprocess.run(cmd, check=True)
-        log.info("Restore successful!")
-    except subprocess.CalledProcessError as e:
-        log.error(f"Restore failed: {e}")
+    log.warning("!!! TAMPERING DETECTED !!!")
+    
+    if files_to_restore != []:
+        log.info("Restoring system from backup...")
+        log.info(f"Selective restore: {files_to_restore}")
+        try:
+            cleaned_files = [f.lstrip('/') for f in files_to_restore]
+            cmd = ["tar", "-xzvf", GOLD_BACKUP, "-C", "/", "--overwrite"] + cleaned_files
+            subprocess.run(cmd, check=True)
+            log.info("Restore successful!")
+        except subprocess.CalledProcessError as e:
+            log.error(f"Restore failed: {e}")
+
+    if packages_to_uninstall != []:
+        log.info("Uninstalling introsion packages...")
+        log.info(f"Selective uninstall: {packages_to_uninstall}")
+        try:
+            cmd = [
+                "opkg", "remove", 
+                "--force-removal-of-dependent-packages", 
+                "--autoremove"
+            ] + packages_to_uninstall
+            
+            log.info(f"Running command: {' '.join(cmd)}")
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            
+            log.info("Uninstall successful!")
+            log.debug(f"Opkg output: {result.stdout}")
+
+        except subprocess.CalledProcessError as e:
+            log.error(f"Uninstall failed! Exit code: {e.returncode}")
+            log.error(f"Opkg Error: {e.stderr}")
     
     log.warning("System rebooting in 5 seconds...")
     time.sleep(5) 
-    
     # run_cmd(["sudo", "reboot"], check=False)
 
 # -- Main --
@@ -146,17 +194,16 @@ def main():
     log.info("========== STARTING SECURITY AGENT SERVICES ==========")
 
     baseline = load_baseline(BASELINE_FILE)
-    # whitelist = load_whitelist()
+    whitelist = load_whitelist()
 
     log.info(f"Monitoring {len(baseline)} files from baseline.")
-    # log.info(f"Monitoring {len(whitelist)} processes from whitelist.")
+    log.info(f"Monitoring {len(whitelist)} packages from whitelist.")
 
     while True:
         start_time = time.time()
 
         ok_files, failed_files = check_files(baseline)
-        # ok_proc = check_process(whitelist)
-        ok_proc = True
+        ok_proc, introsion_packages = check_packages(whitelist)
 
         elapsed = time.time() - start_time
         if elapsed > CHECK_INTERVAL:
@@ -165,7 +212,7 @@ def main():
             log.info(f"Updated check interval: {CHECK_INTERVAL}")
 
         if not ok_files or not ok_proc:
-            trigger_response(failed_files)
+            trigger_response(failed_files, introsion_packages)
 
         time.sleep(CHECK_INTERVAL)
 
