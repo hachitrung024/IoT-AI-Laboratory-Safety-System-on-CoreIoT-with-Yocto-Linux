@@ -167,18 +167,19 @@ def trigger_response(files_to_restore, packages_to_uninstall):
         log.info("Uninstalling introsion packages...")
         log.info(f"Selective uninstall: {packages_to_uninstall}")
         try:
-            cmd = [
-                "opkg", "remove", 
-                "--force-removal-of-dependent-packages", 
-                "--autoremove"
-            ] + packages_to_uninstall
+            # cmd = [
+            #     "opkg", "remove", 
+            #     "--force-removal-of-dependent-packages", 
+            #     "--autoremove"
+            # ] + packages_to_uninstall
             
-            log.info(f"Running command: {' '.join(cmd)}")
+            # log.info(f"Running command: {' '.join(cmd)}")
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             
-            log.info("Uninstall successful!")
-            log.debug(f"Opkg output: {result.stdout}")
+            # log.info("Uninstall successful!")
+            # log.debug(f"Opkg output: {result.stdout}")
+            pass
 
         except subprocess.CalledProcessError as e:
             log.error(f"Uninstall failed! Exit code: {e.returncode}")
