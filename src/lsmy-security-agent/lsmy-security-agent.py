@@ -16,8 +16,9 @@ LSMY_SERVICE = "run-lsmy.service"
 BASELINE_FILE = "/etc/security/baseline.db"
 WHITELIST_FILE = "/etc/security/whitelist.txt"
 GOLD_BACKUP = "/etc/security/gold_backup.tar.gz"
-LOG_FILE = "/data/logs/security-agent.log"
+UPDATE_LOCK_FILE = "/run/lsmy_updating.lock"
 
+LOG_FILE = "/data/logs/security-agent.log"
 LOG_DIR = "/data/logs"
 
 if not os.path.exists(LOG_DIR):
@@ -201,6 +202,11 @@ def main():
     log.info(f"Monitoring {len(whitelist)} packages from whitelist.")
 
     while True:
+        if os.path.exists(UPDATE_LOCK_FILE):
+            log.info("System update in progress... skipping integrity check.")
+            time.sleep(10)
+            continue
+
         start_time = time.time()
 
         ok_files, failed_files = check_files(baseline)
