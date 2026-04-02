@@ -201,6 +201,17 @@ def trigger_response(files_to_restore, packages_to_uninstall):
 def socket_control_thread():
     global MAINTENANCE_MODE
     
+    log.info("========== STARTING SOCKET CONTROL THREAD ==========")
+
+    socket_dir = os.path.dirname(SEC_SOCKET_PATH)
+    if not os.path.exists(socket_dir):
+        try:
+            log.info(f"Creating directory: {socket_dir}")
+            os.makedirs(socket_dir, mode=0o755, exist_ok=True)
+        except Exception as e:
+            log.error(f"Could not create socket directory: {e}")
+            return
+        
     if os.path.exists(SEC_SOCKET_PATH):
         os.remove(SEC_SOCKET_PATH)
     
