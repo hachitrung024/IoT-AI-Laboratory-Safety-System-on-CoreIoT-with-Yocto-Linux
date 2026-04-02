@@ -249,6 +249,52 @@ def socket_control_thread():
         finally:
             conn.close()
 
+def is_early_boot():
+    with open("/proc/uptime") as f:
+        uptime = float(f.read().split()[0])
+    return uptime < 120
+
+INIT_FLAG = "/etc/security/baseline_initialized"
+
+def should_refresh_baseline():
+    if not os.path.exists(BASELINE_FILE):
+        log.warning("Baseline missing, rebuild allowed")
+        return True
+
+    baseline = load_baseline(BASELINE_FILE)
+    ok, _ = check_files(baseline)
+
+    if ok:
+        log.info("System clean, do not need to refresh baseline")
+        return False
+    else:
+        if not os.path.exists(INIT_FLAG):
+            log.warning("System modified, need to rebuild baseline!")
+            return True
+        else:
+            log.info("System modified, but baseline already initialized")
+            return False
+
+def refresh_baseline_once_after_boot():
+    try:
+        if is_early_boot():
+            if should_refresh_baseline():
+                with open(INIT_FLAG, "w") as f:
+                    f.write("initialized\n")
+
+                # Make the file read-only
+                os.chmod(INIT_FLAG, 0o400)
+                try:
+                    subprocess.run(["chattr", "+i", INIT_FLAG], check=True)
+                    subprocess.run(["/usr/bin/gen_baseline.sh"], check=True)
+
+                    log.info("Boot baseline refreshed successfully.")
+                except Exception:
+                    log.error("Boot baseline refresh failed.")
+
+    except Exception as e:
+        log.exception(f"Boot baseline refresh failed: {e}") 
+
 # -- Main --
 def main():
     global CHECK_INTERVAL
@@ -256,6 +302,8 @@ def main():
 
     t = threading.Thread(target=socket_control_thread, daemon=True)
     t.start()
+
+    refresh_baseline_once_after_boot()
 
     baseline = load_baseline(BASELINE_FILE)
     whitelist = load_whitelist()
