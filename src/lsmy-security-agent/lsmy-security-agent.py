@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
-import hashlib
-import time
-import subprocess
 import os
 import sys
+import time
+import socket
+import struct
+import hashlib
 import logging
+import threading
+import subprocess
 from logging.handlers import RotatingFileHandler
 
 # ====== COMMAND RUNNER LIBRARY ======
@@ -13,10 +16,13 @@ from lsmy_python_lib.command_runner import run_cmd, run_cmd_with_retry
 
 LSMY_SERVICE = "run-lsmy.service"
 
+SEC_SOCKET_PATH = "/run/lsmy/security.sock"
+MAINTENANCE_TOKEN = "LSMY_PAUSE_SECRET_99"
+MAINTENANCE_MODE = False
+
 BASELINE_FILE = "/etc/security/baseline.db"
 WHITELIST_FILE = "/etc/security/whitelist.txt"
 GOLD_BACKUP = "/etc/security/gold_backup.tar.gz"
-UPDATE_LOCK_FILE = "/run/lsmy_updating.lock"
 
 LOG_FILE = "/data/logs/security-agent.log"
 LOG_DIR = "/data/logs"
@@ -159,8 +165,9 @@ def trigger_response(files_to_restore, packages_to_uninstall):
         try:
             cleaned_files = [f.lstrip('/') for f in files_to_restore]
             cmd = ["tar", "-xzvf", GOLD_BACKUP, "-C", "/", "--overwrite"] + cleaned_files
-            subprocess.run(cmd, check=True)
-            log.info("Restore successful!")
+            if not MAINTENANCE_MODE:
+                subprocess.run(cmd, check=True)
+                log.info("Restore successful!")
         except subprocess.CalledProcessError as e:
             log.error(f"Restore failed: {e}")
 
@@ -174,12 +181,13 @@ def trigger_response(files_to_restore, packages_to_uninstall):
             #     "--autoremove"
             # ] + packages_to_uninstall
             
-            # log.info(f"Running command: {' '.join(cmd)}")
-            
-            # result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            
-            # log.info("Uninstall successful!")
-            # log.debug(f"Opkg output: {result.stdout}")
+            # if not MAINTENANCE_MODE:
+                # log.info(f"Running command: {' '.join(cmd)}")
+                
+                # result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                
+                # log.info("Uninstall successful!")
+                # log.debug(f"Opkg output: {result.stdout}")
             pass
 
         except subprocess.CalledProcessError as e:
@@ -190,10 +198,50 @@ def trigger_response(files_to_restore, packages_to_uninstall):
     time.sleep(5) 
     # run_cmd(["sudo", "reboot"], check=False)
 
+def socket_control_thread():
+    global MAINTENANCE_MODE
+    
+    if os.path.exists(SEC_SOCKET_PATH):
+        os.remove(SEC_SOCKET_PATH)
+    
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(SEC_SOCKET_PATH)
+    os.chmod(SEC_SOCKET_PATH, 0o600)
+    server.listen(1)
+
+    while True:
+        conn, _ = server.accept()
+        try:
+            creds = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
+            pid, uid, gid = struct.unpack('3i', creds)
+            
+            if uid != 0:
+                conn.sendall(b"Access Denied: Root only\n")
+                conn.close()
+                continue
+
+            data = conn.recv(1024).decode().strip()
+            if data == f"START_MAINTENANCE:{MAINTENANCE_TOKEN}":
+                MAINTENANCE_MODE = True
+                log.warning("!!! SECURITY PAUSED VIA SOCKET !!!")
+                conn.sendall(b"ACK:PAUSED\n")
+            elif data == f"STOP_MAINTENANCE:{MAINTENANCE_TOKEN}":
+                MAINTENANCE_MODE = False
+                log.info("--- SECURITY RESUMED VIA SOCKET ---")
+                conn.sendall(b"ACK:RESUMED\n")
+            
+        except Exception as e:
+            log.error(f"Socket error: {e}")
+        finally:
+            conn.close()
+
 # -- Main --
 def main():
     global CHECK_INTERVAL
     log.info("========== STARTING SECURITY AGENT SERVICES ==========")
+
+    t = threading.Thread(target=socket_control_thread, daemon=True)
+    t.start()
 
     baseline = load_baseline(BASELINE_FILE)
     whitelist = load_whitelist()
@@ -202,8 +250,8 @@ def main():
     log.info(f"Monitoring {len(whitelist)} packages from whitelist.")
 
     while True:
-        if os.path.exists(UPDATE_LOCK_FILE):
-            log.info("System update in progress... skipping integrity check.")
+        if MAINTENANCE_MODE:
+            log.info("Maintenance mode active... sleeping.")
             time.sleep(10)
             continue
 
