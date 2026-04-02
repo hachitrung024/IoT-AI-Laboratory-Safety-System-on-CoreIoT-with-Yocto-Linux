@@ -240,6 +240,9 @@ def socket_control_thread():
                 MAINTENANCE_MODE = False
                 log.info("--- SECURITY RESUMED VIA SOCKET ---")
                 conn.sendall(b"ACK:RESUMED\n")
+            else:
+                log.warning(f"Invalid command: {data}")
+                conn.sendall(b"Invalid command\n")
             
         except Exception as e:
             log.error(f"Socket error: {e}")
