@@ -286,7 +286,16 @@ def refresh_baseline_once_after_boot():
                 os.chmod(INIT_FLAG, 0o400)
                 try:
                     subprocess.run(["chattr", "+i", INIT_FLAG], check=True)
+
+                    if os.path.exists(BASELINE_FILE):
+                        subprocess.run(["chattr", "-i", BASELINE_FILE], check=True)
+
+                    env = os.environ.copy()
+                    env["ROOTFS"] = ""
                     subprocess.run(["/usr/bin/gen_baseline.sh"], check=True)
+
+                    if os.path.exists(BASELINE_FILE):
+                        subprocess.run(["chattr", "+i", BASELINE_FILE], check=False)
 
                     log.info("Boot baseline refreshed successfully.")
                 except Exception:
