@@ -101,7 +101,7 @@ class WiFiModeManager:
         run_cmd(["systemctl", "stop", "dnsmasq"], check=False)
 
         # Stop STA service
-        run_cmd(["systemctl", "stop", "wpa_supplicant"], check=False)
+        run_cmd(["systemctl", "stop", "systemd-timesyncd"], check=False)
         # Restore default network config (STA)
         self._link_network(STA_NETWORK_FILE)
 
