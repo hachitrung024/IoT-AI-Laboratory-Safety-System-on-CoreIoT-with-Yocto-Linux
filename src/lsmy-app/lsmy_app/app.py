@@ -277,7 +277,7 @@ class LsmyApplication:
 
         # Network time synchronization services stop
         log.info("Stopping network time synchronization services")
-        run_cmd(["systemctl", "stop", "wpa_supplicant"], check=False)
+        run_cmd(["systemctl", "stop", "systemd-timesyncd"], check=False)
         log.info("Network time synchronization services successfully stopped")
 
     # -------- Signals --------
