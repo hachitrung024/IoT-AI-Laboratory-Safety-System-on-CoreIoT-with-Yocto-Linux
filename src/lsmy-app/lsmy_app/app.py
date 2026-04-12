@@ -314,7 +314,7 @@ class LsmyApplication:
 
                         # Network time synchronization services for time sync
                         log.info("Restarting network time synchronization services")
-                        run_cmd(["systemctl", "restart", "wpa_supplicant"], check=False)
+                        run_cmd(["systemctl", "restart", "systemd-timesyncd"], check=False)
                         log.info(f"Current system time: {datetime.now(timezone.utc)}")
                     else:
                         log.info("WiFi connected, but could not retrieve detailed info.")
