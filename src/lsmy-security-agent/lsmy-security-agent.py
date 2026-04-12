@@ -252,7 +252,7 @@ def socket_control_thread():
 def is_early_boot():
     with open("/proc/uptime") as f:
         uptime = float(f.read().split()[0])
-    return uptime < 120
+    return uptime < 300
 
 INIT_FLAG = "/etc/security/baseline_initialized"
 
