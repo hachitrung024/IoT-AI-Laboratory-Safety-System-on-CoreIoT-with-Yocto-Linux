@@ -1,78 +1,62 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <math.h>
+#include <stdlib.h>
+#include <nnstreamer_customfilter.h> 
+
+typedef struct {
+    int dummy;
+} blaze_priv;
 
 /*
- * =========================
  * INIT
- * =========================
  */
-void *init(const char *model_path)
+static void *blaze_init(const char *option)
 {
-    printf("[blaze_decode] init model: %s\n", model_path ? model_path : "NULL");
-    return NULL;
+    printf("[blaze_decode] init\n");
+    blaze_priv *p = (blaze_priv *)malloc(sizeof(blaze_priv));
+    return p;
 }
 
 /*
- * =========================
  * INVOKE
- * =========================
- *
- * input:
- *   float array from blazeface tflite output
- *
- * output:
- *   bbox = [x, y, w, h]
  */
-int invoke(void *private_data,
-           const float *input,
-           float *output)
+static int blaze_invoke(void *data,
+                         const float *input,
+                         float *output)
 {
-    if (!input || !output)
-        return -1;
-
     float score = input[0];
 
-    // ===== NO FACE =====
     if (score < 0.5f) {
-        output[0] = 0.0f;
-        output[1] = 0.0f;
-        output[2] = 0.0f;
-        output[3] = 0.0f;
+        memset(output, 0, sizeof(float) * 4);
         return 0;
     }
 
-    // ===== SIMPLE DEMO BBOX =====
-    // (center of image fallback)
+    float cx = 320.0f;
+    float cy = 240.0f;
 
-    float img_w = 640.0f;
-    float img_h = 480.0f;
+    output[0] = cx - 90;
+    output[1] = cy - 90;
+    output[2] = 180;
+    output[3] = 180;
 
-    float w = 180.0f;
-    float h = 180.0f;
-
-    float cx = img_w / 2.0f;
-    float cy = img_h / 2.0f;
-
-    output[0] = cx - w / 2.0f;  // x
-    output[1] = cy - h / 2.0f;  // y
-    output[2] = w;              // width
-    output[3] = h;              // height
-
-    printf("[blaze_decode] bbox = %.2f %.2f %.2f %.2f\n",
-           output[0], output[1],
-           output[2], output[3]);
-
+    printf("[blaze_decode] bbox OK\n");
     return 0;
 }
 
 /*
- * =========================
  * DEINIT
- * =========================
  */
-void deinit(void *private_data)
+static void blaze_deinit(void *data)
 {
-    printf("[blaze_decode] deinit\n");
+    free(data);
 }
+
+/*
+ * REGISTER
+ */
+NNStreamerCustomFilter blaze_custom = {
+    .name = "blaze_decode",
+    .init = blaze_init,
+    .invoke = blaze_invoke,
+    .deinit = blaze_deinit
+};
