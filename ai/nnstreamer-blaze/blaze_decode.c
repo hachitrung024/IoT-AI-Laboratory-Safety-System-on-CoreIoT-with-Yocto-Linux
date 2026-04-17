@@ -66,19 +66,17 @@ static void blaze_close(const GstTensorFilterProperties *prop, void **private_da
  * Định nghĩa theo đúng struct GstTensorFilterFramework bạn vừa tìm thấy
  */
 static GstTensorFilterFramework blaze_custom = {
-    .version = 0x00010000, // Cần kiểm tra bitmask, thường dùng 1 (v0/v1) tùy version API
+    .version = 1, 
     .open = blaze_open,
     .close = blaze_close,
-    // Truy cập vào union struct v0 (theo header của bạn)
     {
-        .v0 = {
-            .name = "blaze_decode",
-            .invoke_NN = blaze_invoke,
-            .allow_in_place = 0,
-            .allocate_in_invoke = 0,
-            .run_without_model = 1, // Nếu bạn không dùng model file bên ngoài
-            .verify_model_path = 0
-        }
+        .name = "blaze_decode",
+        .allow_in_place = 0,
+        .allocate_in_invoke = 0,
+        .run_without_model = 1,
+        .verify_model_path = 0,
+        .invoke_NN = blaze_invoke,
+        /* Các hàm khác có thể để NULL hoặc không khai báo */
     }
 };
 
