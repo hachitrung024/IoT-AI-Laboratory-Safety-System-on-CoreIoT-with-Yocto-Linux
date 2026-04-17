@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <nnstreamer_customfilter.h> 
+#include <nnstreamer_plugin_api_filter.h>
 
 typedef struct {
     int dummy;
