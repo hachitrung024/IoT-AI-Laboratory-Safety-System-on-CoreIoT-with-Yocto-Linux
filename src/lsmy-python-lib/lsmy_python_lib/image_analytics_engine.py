@@ -217,6 +217,7 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
+                    f"tensor_filter framework=custom model=blaze_decode ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
@@ -236,6 +237,7 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
+                    f"tensor_filter framework=custom model=blaze_decode ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
@@ -298,7 +300,7 @@ class ImageAnalyticsEngine:
             try:
                 res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
                 
-                if len(res_array) > 0:
+                if len(res_array) > 0 and res_array[2] > 0:
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
@@ -487,14 +489,10 @@ class ImageAnalyticsEngine:
                     if is_people and raw_data is not None:
                         # Debug display
                         if self.debug_mode and self.overlay:
-                            decoded = decode_blazeface(raw_data, width=self.width, height=self.height)
-                            if decoded:
-                                x, y, w, h, landmarks = decoded
-                                self.current_bbox = (x, y, w, h)
-                                self.current_landmarks = landmarks
-                            else:
-                                self.current_bbox = None
-                                self.current_landmarks = None
+                            self.current_bbox = (raw_data[0], raw_data[1], raw_data[2], raw_data[3])
+                            
+                            lm_part = raw_data[4:]
+                            self.current_landmarks = [(lm_part[i], lm_part[i+1]) for i in range(0, 12, 2)]
                         else:
                             # log.info("--- [AI DATA] ---")
                             # log.info(f"Number of data: {len(raw_data)}")

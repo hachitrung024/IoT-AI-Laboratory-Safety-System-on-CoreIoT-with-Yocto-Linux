@@ -2,12 +2,54 @@
 #include <glib.h>
 #include <nnstreamer_plugin_api_filter.h>
 
+#define NUM_ANCHORS 896
+#define BOX_SIZE 16
+#define SCORE_IDX 14336
+#define OUTPUT_DIM 16   // 4 (bbox) + 12 (6 landmarks * 2)
+// #define OUTPUT_DIM 4   // 4 (bbox) for pipeline
+
+typedef struct {
+    float x;
+    float y;
+} Anchor;
+
 void init_filter_blaze (void) __attribute__ ((constructor));
 void fini_filter_blaze (void) __attribute__ ((destructor));
 
 typedef struct {
   gchar *model_path;
+  Anchor anchors[NUM_ANCHORS];
 } blaze_pdata;
+
+/* Create anchors */
+static void generate_anchors(Anchor *anchors) {
+    int idx = 0;
+    // Grid 16x16
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 16; x++) {
+            for (int i = 0; i < 2; i++) {
+                anchors[idx].x = (x + 0.5f) / 16.0f;
+                anchors[idx].y = (y + 0.5f) / 16.0f;
+                idx++;
+            }
+        }
+    }
+    // Grid 8x8
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            for (int i = 0; i < 6; i++) {
+                anchors[idx].x = (x + 0.5f) / 8.0f;
+                anchors[idx].y = (y + 0.5f) / 8.0f;
+                idx++;
+            }
+        }
+    }
+}
+
+/* Sigmoid function */
+static float sigmoid(float x) {
+    return 1.0f / (1.0f + expf(-fmaxf(fminf(x, 88.0f), -88.0f)));
+}
 
 static void blaze_close (const GstTensorFilterProperties * prop,
     void **private_data);
@@ -52,6 +94,8 @@ blaze_open (const GstTensorFilterProperties * prop, void **private_data)
   if (prop->num_models > 0)
     pdata->model_path = g_strdup (prop->model_files[0]);
 
+  generate_anchors(pdata->anchors);
+
   g_print ("[blaze_decode] Loaded model: %s\n", pdata->model_path);
 
   return 0;
@@ -67,12 +111,13 @@ static int
 blaze_getInputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
+  // Split the array: the first 14,336 numbers are Box, and the remaining 896 numbers are Score.
   info->num_tensors = 1;
-  info->info[0].type = _NNS_UINT8;
-  info->info[0].dimension[0] = 3;   // Channels
-  info->info[0].dimension[1] = 640; // Width
-  info->info[0].dimension[2] = 480; // Height
-  info->info[0].dimension[3] = 1;   // Batch
+  info->info[0].type = _NNS_FLOAT32;
+  info->info[0].dimension[0] = 15232; 
+  info->info[0].dimension[1] = 1;
+  info->info[0].dimension[2] = 1;
+  info->info[0].dimension[3] = 1;
   return 0;
 }
 
@@ -88,7 +133,7 @@ blaze_getOutputDim (const GstTensorFilterProperties * prop,
 {
   info->num_tensors = 1;
   info->info[0].type = _NNS_FLOAT32;
-  info->info[0].dimension[0] = 4;
+  info->info[0].dimension[0] = OUTPUT_DIM; 
   info->info[0].dimension[1] = 1;
   info->info[0].dimension[2] = 1;
   info->info[0].dimension[3] = 1;
@@ -104,23 +149,57 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
 {
   blaze_pdata *pdata = (blaze_pdata *) (*private_data);
   
-  uint8_t *in_ptr = (uint8_t *) input[0].data;
-  float *out_ptr = (float *) output[0].data;
+  float *in_ptr = (float *)input[0].data;
+  float *out_ptr = (float *)output[0].data;
 
-  float score = (float)in_ptr[0] / 255.0f;
+  float *boxes = in_ptr;
+  float *scores = &in_ptr[SCORE_IDX];
 
-  if (score < 0.5f) {
-    memset (out_ptr, 0, sizeof (float) * 4);
-    return 0;
+  int best_idx = -1;
+  float max_score = -1e10f;
+
+  /* Find best score */
+  for (int i = 0; i < NUM_ANCHORS; i++) {
+      if (scores[i] > max_score) {
+          max_score = scores[i];
+          best_idx = i;
+      }
   }
 
-  float cx = 320.0f;
-  float cy = 240.0f;
+  float confidence = sigmoid(max_score);
+  float threshold = 0.75f;
 
-  out_ptr[0] = cx - 90.0f; // xmin
-  out_ptr[1] = cy - 90.0f; // ymin
-  out_ptr[2] = 180.0f;     // width
-  out_ptr[3] = 180.0f;     // height
+  if (best_idx == -1 || confidence < threshold) {
+      memset(out_ptr, 0, sizeof(float) * OUTPUT_DIM);
+      return 0;
+  }
+
+  /* Decode box */
+  float *raw_box = &boxes[best_idx * BOX_SIZE];
+  Anchor anchor = pdata->anchors[best_idx];
+
+  float width_img = 640.0f;
+  float height_img = 480.0f;
+
+  float cx = (raw_box[1] / 128.0f + anchor.x) * width_img;
+  float cy = (raw_box[0] / 128.0f + anchor.y) * height_img;
+  float w = (raw_box[3] / 128.0f) * width_img;
+  float h = (raw_box[2] / 128.0f) * height_img;
+
+  out_ptr[0] = cx - w / 2.0f; // xmin
+  out_ptr[1] = cy - h / 2.0f; // ymin
+  out_ptr[2] = w;
+  out_ptr[3] = h;
+
+  // 2. Decode 6 Landmarks
+  for (int i = 0; i < 6; i++) {
+    float kx_raw = raw_box[4 + i * 2];
+    float ky_raw = raw_box[4 + i * 2 + 1];
+    
+    // out_ptr[4...15]
+    out_ptr[4 + i * 2]     = (kx_raw / 128.0f + anchor.x) * width_img; // landmark_x
+    out_ptr[4 + i * 2 + 1] = (ky_raw / 128.0f + anchor.y) * height_img; // landmark_y
+  }
 
   return 0;
 }
