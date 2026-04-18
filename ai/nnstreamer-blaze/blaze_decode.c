@@ -112,12 +112,22 @@ blaze_getInputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
   // Split the array: the first 14,336 numbers are Box, and the remaining 896 numbers are Score.
-  info->num_tensors = 1;
+  info->num_tensors = 2;
+  
+  // Tensor 0: Boxes (896 anchors * 16 values)
   info->info[0].type = _NNS_FLOAT32;
-  info->info[0].dimension[0] = 15232; 
-  info->info[0].dimension[1] = 1;
+  info->info[0].dimension[0] = 16;
+  info->info[0].dimension[1] = 896;
   info->info[0].dimension[2] = 1;
   info->info[0].dimension[3] = 1;
+
+  // Tensor 1: Scores (896 anchors * 1 value)
+  info->info[1].type = _NNS_FLOAT32;
+  info->info[1].dimension[0] = 1;
+  info->info[1].dimension[1] = 896;
+  info->info[1].dimension[2] = 1;
+  info->info[1].dimension[3] = 1;
+
   return 0;
 }
 
@@ -149,12 +159,10 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
 {
   blaze_pdata *pdata = (blaze_pdata *) (*private_data);
   
-  float *in_ptr = (float *)input[0].data;
+  float *boxes = (float *)input[0].data;
+  float *scores = (float *)input[1].data;
   float *out_ptr = (float *)output[0].data;
-
-  float *boxes = in_ptr;
-  float *scores = &in_ptr[SCORE_IDX];
-
+  
   int best_idx = -1;
   float max_score = -1e10f;
 

@@ -217,7 +217,8 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
-                    f"tensor_filter framework=custom model=blaze_decode ! "
+                    f"tensor_mux name=mux ! "
+                    f"tensor_filter framework=blaze_decode model=dummy ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
@@ -237,7 +238,8 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
-                    f"tensor_filter framework=custom model=blaze_decode ! "
+                    f"tensor_mux name=mux ! "
+                    f"tensor_filter framework=blaze_decode model=dummy ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
