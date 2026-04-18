@@ -219,7 +219,7 @@ class ImageAnalyticsEngine:
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
                     f"tensor_mux name=mux ! "
-                    f"tensor_filter framework=blaze_decode model=dummy ! "
+                    f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
@@ -240,7 +240,7 @@ class ImageAnalyticsEngine:
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
                     f"tensor_mux name=mux ! "
-                    f"tensor_filter framework=blaze_decode model=dummy ! "
+                    f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
                 )
@@ -518,67 +518,6 @@ class ImageAnalyticsEngine:
                 break
             
             self._stop_event.wait(5)
-
-def create_anchors(width=128, height=128):
-    anchors = []
-    
-    # Grid 16x16
-    for y in range(16):
-        for x in range(16):
-            for _ in range(2):
-                anchors.append([(x + 0.5) / 16.0, (y + 0.5) / 16.0])
-    # Grid 8x8
-    for y in range(8):
-        for x in range(8):
-            for _ in range(6):
-                anchors.append([(x + 0.5) / 8.0, (y + 0.5) / 8.0])
-                
-    return np.array(anchors)
-
-MY_ANCHORS = create_anchors()
-
-def decode_blazeface(raw_data, score_threshold=0.75, width=640, height=480):
-    """
-    Decode the array 15,232 into face coordinates. (x, y, w, h)
-    """
-    # Split the array: the first 14,336 numbers are Box, and the remaining 896 numbers are Score.
-    boxes = raw_data[:14336].reshape(896, 16)
-    scores = raw_data[14336:]
-    
-    sigmoid_scores = 1 / (1 + np.exp(-np.clip(scores, -88, 88)))
-    
-    best_idx = np.argmax(sigmoid_scores)
-    
-    if sigmoid_scores[best_idx] < score_threshold:
-        return None
-            
-    if best_idx == -1:
-        return None
-
-    raw_box = boxes[best_idx]
-    anchor = MY_ANCHORS[best_idx]
-    
-    # Scale to Pixel
-    cx = (raw_box[1] / 128.0 + anchor[0]) * width
-    cy = (raw_box[0] / 128.0 + anchor[1]) * height
-    w = (raw_box[3] / 128.0) * width
-    h = (raw_box[2] / 128.0) * height
-    
-    x = cx - w/2
-    y = cy - h/2
-
-    # 6 Landmarks
-    landmarks = []
-    for i in range(6):
-        kx_raw = raw_box[4 + i*2]
-        ky_raw = raw_box[4 + i*2 + 1]
-
-        kx = (kx_raw / 128.0 + anchor[0]) * width
-        ky = (ky_raw / 128.0 + anchor[1]) * height
-        
-        landmarks.append((kx, ky))
-    
-    return x, y, w, h, landmarks
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Image Analytics Engine")

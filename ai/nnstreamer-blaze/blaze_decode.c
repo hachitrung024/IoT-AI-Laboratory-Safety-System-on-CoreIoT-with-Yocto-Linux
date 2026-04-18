@@ -11,6 +11,8 @@
 typedef struct {
     float x;
     float y;
+    float width_img;
+    float height_img;
 } Anchor;
 
 void init_filter_blaze (void) __attribute__ ((constructor));
@@ -111,6 +113,18 @@ static int
 blaze_getInputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
+  blaze_pdata *pdata = (blaze_pdata *) (*private_data);
+
+  if (prop->custom) {
+      if (sscanf(prop->custom, "%f,%f", &pdata->width_img, &pdata->height_img) != 2) {
+          pdata->width_img = 640.0f;
+          pdata->height_img = 480.0f;
+      }
+  } else {
+      pdata->width_img = 640.0f;
+      pdata->height_img = 480.0f;
+  }
+
   // Split the array: the first 14,336 numbers are Box, and the remaining 896 numbers are Score.
   info->num_tensors = 2;
   
@@ -186,8 +200,8 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float *raw_box = &boxes[best_idx * BOX_SIZE];
   Anchor anchor = pdata->anchors[best_idx];
 
-  float width_img = 640.0f;
-  float height_img = 480.0f;
+  float width_img = pdata->width_img;
+  float height_img = pdata->height_img;
 
   float cx = (raw_box[1] / 128.0f + anchor.x) * width_img;
   float cy = (raw_box[0] / 128.0f + anchor.y) * height_img;
