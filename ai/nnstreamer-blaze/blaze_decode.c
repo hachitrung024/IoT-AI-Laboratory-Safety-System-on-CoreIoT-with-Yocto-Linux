@@ -1,3 +1,5 @@
+# include <math.h>
+# include <stdio.h>
 #include <string.h>
 #include <glib.h>
 #include <nnstreamer_plugin_api_filter.h>
@@ -11,8 +13,6 @@
 typedef struct {
     float x;
     float y;
-    float width_img;
-    float height_img;
 } Anchor;
 
 void init_filter_blaze (void) __attribute__ ((constructor));
@@ -21,6 +21,8 @@ void fini_filter_blaze (void) __attribute__ ((destructor));
 typedef struct {
   gchar *model_path;
   Anchor anchors[NUM_ANCHORS];
+  float width_img;
+  float height_img;
 } blaze_pdata;
 
 /* Create anchors */
