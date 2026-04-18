@@ -68,6 +68,7 @@ class ImageAnalyticsEngine:
 
         self.metrics_lock = threading.Lock()
         self.critical_lock = threading.Lock()
+        self.draw_overlay_lock = threading.Lock()
 
         self.pipeline_fps = fps
         self.result_count = 0
@@ -216,7 +217,7 @@ class ImageAnalyticsEngine:
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
                     f"tensor_mux name=mux ! "
                     f"tensor_filter framework=blaze_decode model=dummy ! "
                     f"identity name=infer_end signal-handoffs=true ! "
@@ -237,7 +238,7 @@ class ImageAnalyticsEngine:
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack,num_threads:4 ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
                     f"tensor_mux name=mux ! "
                     f"tensor_filter framework=blaze_decode model=dummy ! "
                     f"identity name=infer_end signal-handoffs=true ! "
@@ -338,10 +339,11 @@ class ImageAnalyticsEngine:
             self.inference_time = (time.time() - start) * 1000
 
     def on_draw_overlay(self, overlay, context, timestamp, duration):
-        if self.current_bbox is None:
-            return
+        with self.draw_overlay_lock:
+            if self.current_bbox is None:
+                return
 
-        x, y, w, h = self.current_bbox
+            x, y, w, h = self.current_bbox
 
         # draw bounding box
         context.set_source_rgb(0, 1, 0)
@@ -349,12 +351,13 @@ class ImageAnalyticsEngine:
         context.rectangle(x, y, w, h)
         context.stroke()
 
-        # draw landmarks
-        if self.current_landmarks:
-            context.set_source_rgb(1, 0, 0)
-            for kx, ky in self.current_landmarks:
-                context.arc(kx, ky, 3, 0, 2 * 3.1416)
-                context.fill()
+        with self.draw_overlay_lock:
+            # draw landmarks
+            if self.current_landmarks:
+                context.set_source_rgb(1, 0, 0)
+                for kx, ky in self.current_landmarks:
+                    context.arc(kx, ky, 3, 0, 2 * 3.1416)
+                    context.fill()
 
         # draw info panel
         context.set_source_rgba(0, 0, 0, 0.5)
@@ -491,10 +494,11 @@ class ImageAnalyticsEngine:
                     if is_people and raw_data is not None:
                         # Debug display
                         if self.debug_mode and self.overlay:
-                            self.current_bbox = (raw_data[0], raw_data[1], raw_data[2], raw_data[3])
-                            
-                            lm_part = raw_data[4:]
-                            self.current_landmarks = [(lm_part[i], lm_part[i+1]) for i in range(0, 12, 2)]
+                            with self.draw_overlay_lock:
+                                self.current_bbox = (raw_data[0], raw_data[1], raw_data[2], raw_data[3])
+                                
+                                lm_part = raw_data[4:]
+                                self.current_landmarks = [(lm_part[i], lm_part[i+1]) for i in range(0, 12, 2)]
                         else:
                             # log.info("--- [AI DATA] ---")
                             # log.info(f"Number of data: {len(raw_data)}")
@@ -502,8 +506,9 @@ class ImageAnalyticsEngine:
                             # log.info("-" * 30)
                             pass
                     else:
-                        self.current_bbox = None
-                        self.current_landmarks = None
+                        with self.draw_overlay_lock:
+                            self.current_bbox = None
+                            self.current_landmarks = None
 
     def _monitor_loop(self):
         while not self._stop_event.is_set():
