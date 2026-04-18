@@ -117,8 +117,8 @@ blaze_getInputDim (const GstTensorFilterProperties * prop,
 {
   blaze_pdata *pdata = (blaze_pdata *) (*private_data);
 
-  if (prop->custom) {
-      if (sscanf(prop->custom, "%f,%f", &pdata->width_img, &pdata->height_img) != 2) {
+  if (prop->custom_properties) {
+      if (sscanf(prop->custom_properties, "%f,%f", &pdata->width_img, &pdata->height_img) != 2) {
           pdata->width_img = 640.0f;
           pdata->height_img = 480.0f;
       }
