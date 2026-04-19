@@ -205,9 +205,9 @@ class ImageAnalyticsEngine:
             )
             
             if self.debug_mode:
-                # Branch 1: AI inference
+                # Branch 1: Face detection Model
                 pipeline += (
-                    # Split pipeline into two branches
+                    # Split pipeline into three branches
                     f"tee name=t "
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoscale ! "
@@ -218,13 +218,37 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
-                    f"tensor_mux name=mux ! "
+                    # f"tensor_mux name=mux ! "
                     f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
                     f"identity name=infer_end signal-handoffs=true ! "
-                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
+                    f"tensor_mux name=mux " 
                 )
 
-                # Branch 2: Debug display
+                # Branch 2: Frame raw branch
+                pipeline += (
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
+                    f"videoconvert ! video/x-raw,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"mux. "
+
+                    # Crop tensor
+                    f"mux. ! tensor_crop ! "
+
+                    # Face landmark detection
+                    f"videoscale ! video/x-raw,width=192,height=192 ! "
+                    f"videoconvert ! video/x-raw,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+
+                    # Decode + Ear detection
+                    f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
+                    # f"tensor_filter framework=ear_eval model=dummy2 ! "
+
+                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
+                )
+
+                # Branch 3: Debug display
                 pipeline += (
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! cairooverlay name=overlay ! "
                     f"autovideosink sync=false "
@@ -239,7 +263,7 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
-                    f"tensor_mux name=mux ! "
+                    # f"tensor_mux name=mux ! "
                     f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
@@ -303,7 +327,7 @@ class ImageAnalyticsEngine:
             try:
                 res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
                 
-                if len(res_array) > 0 and res_array[2] > 0:
+                if len(res_array) == 936:
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
@@ -339,17 +363,17 @@ class ImageAnalyticsEngine:
             self.inference_time = (time.time() - start) * 1000
 
     def on_draw_overlay(self, overlay, context, timestamp, duration):
-        with self.draw_overlay_lock:
-            if self.current_bbox is None:
-                return
+        # with self.draw_overlay_lock:
+        #     if self.current_bbox is None:
+        #         return
 
-            x, y, w, h = self.current_bbox
+        #     x, y, w, h = self.current_bbox
 
         # draw bounding box
-        context.set_source_rgb(0, 1, 0)
-        context.set_line_width(3)
-        context.rectangle(x, y, w, h)
-        context.stroke()
+        # context.set_source_rgb(0, 1, 0)
+        # context.set_line_width(3)
+        # context.rectangle(x, y, w, h)
+        # context.stroke()
 
         with self.draw_overlay_lock:
             # draw landmarks
@@ -495,10 +519,11 @@ class ImageAnalyticsEngine:
                         # Debug display
                         if self.debug_mode and self.overlay:
                             with self.draw_overlay_lock:
-                                self.current_bbox = (raw_data[0], raw_data[1], raw_data[2], raw_data[3])
-                                
-                                lm_part = raw_data[4:]
-                                self.current_landmarks = [(lm_part[i], lm_part[i+1]) for i in range(0, 12, 2)]
+                                self.current_bbox = None
+
+                                # reshape landmarks
+                                lm = raw_data.reshape(-1, 2)  # (468, 2)
+                                self.current_landmarks = lm
                         else:
                             # log.info("--- [AI DATA] ---")
                             # log.info(f"Number of data: {len(raw_data)}")
