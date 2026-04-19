@@ -194,7 +194,10 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float threshold = 0.75f;
 
   if (best_idx == -1 || confidence < threshold) {
-      memset(out_ptr, 0, sizeof(float) * OUTPUT_DIM);
+      out_ptr[0] = 0.0f; // xmin
+      out_ptr[1] = 0.0f; // ymin
+      out_ptr[2] = 1.0f; // width
+      out_ptr[3] = 1.0f; // height
       return 0;
   }
 
@@ -210,10 +213,16 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float w = (raw_box[3] / 128.0f) * width_img;
   float h = (raw_box[2] / 128.0f) * height_img;
 
-  out_ptr[0] = cx - w / 2.0f; // xmin
-  out_ptr[1] = cy - h / 2.0f; // ymin
-  out_ptr[2] = w;
-  out_ptr[3] = h;
+  float xmin = fmaxf(0.0f, cx - w / 2.0f);
+  float ymin = fmaxf(0.0f, cy - h / 2.0f);
+
+  out_ptr[0] = xmin;
+  out_ptr[1] = ymin;
+  out_ptr[2] = fminf(w, width_img - xmin);
+  out_ptr[3] = fminf(h, height_img - ymin);
+
+  if (out_ptr[2] <= 0) out_ptr[2] = 1.0f;
+  if (out_ptr[3] <= 0) out_ptr[3] = 1.0f;
 
   if (OUTPUT_DIM == 16) {
     // 2. Decode 6 Landmarks
