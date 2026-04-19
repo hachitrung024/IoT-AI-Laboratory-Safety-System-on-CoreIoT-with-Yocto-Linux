@@ -158,6 +158,7 @@ blaze_getOutputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
   info->num_tensors = 1;
+  info->format = _NNS_TENSOR_FORMAT_FLEXIBLE; 
   info->info[0].type = _NNS_INT32;
   info->info[0].dimension[0] = OUTPUT_DIM; 
   info->info[0].dimension[1] = 1;
@@ -195,10 +196,10 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float threshold = 0.75f;
 
   if (best_idx == -1 || confidence < threshold) {
-      out_ptr[0] = 0.0f; // xmin
-      out_ptr[1] = 0.0f; // ymin
-      out_ptr[2] = 1.0f; // width
-      out_ptr[3] = 1.0f; // height
+      out_ptr[0] = 0; // xmin
+      out_ptr[1] = 0; // ymin
+      out_ptr[2] = 1; // width
+      out_ptr[3] = 1; // height
       return 0;
   }
 

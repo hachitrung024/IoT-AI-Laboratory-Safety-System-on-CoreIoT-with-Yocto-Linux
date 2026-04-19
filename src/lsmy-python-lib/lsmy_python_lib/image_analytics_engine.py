@@ -207,7 +207,7 @@ class ImageAnalyticsEngine:
             
             if self.debug_mode:
                 pipeline += (
-                    f"tensor_crop name=crop "
+                    f"tensor_crop name=crop silent=false "
                 )
 
                 # Branch 1: Frame raw branch
