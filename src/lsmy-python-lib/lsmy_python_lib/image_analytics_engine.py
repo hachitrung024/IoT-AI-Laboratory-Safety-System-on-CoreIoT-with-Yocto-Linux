@@ -207,24 +207,7 @@ class ImageAnalyticsEngine:
             
             if self.debug_mode:
                 pipeline += (
-                    # Crop tensor
-                    f"tensor_mux name=mux ! "
-                    f"other/tensors ! "
-                    f"tensor_crop ! "
-                    f"tensor_decoder mode=direct_video ! video/x-raw ! "
-
-                    # Face landmark detection
-                    f"videoscale ! video/x-raw,width=192,height=192 ! "
-                    f"videoconvert ! video/x-raw,format=RGB ! "
-                    f"tensor_converter ! "
-                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
-
-                    # Decode + Ear detection
-                    f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
-                    # f"tensor_filter framework=ear_eval model=dummy2 ! "
-
-                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
+                    f"tensor_crop name=crop "
                 )
 
                 # Branch 1: Frame raw branch
@@ -232,7 +215,7 @@ class ImageAnalyticsEngine:
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
-                    f"queue ! mux.sink_0 "
+                    f"crop.raw "
                 )
 
                 # Branch 2: Face detection Model
@@ -249,8 +232,29 @@ class ImageAnalyticsEngine:
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
                     f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
                     f"identity name=infer_end signal-handoffs=true ! "
-                    f"tensor_transform mode=arithmetic option=typecast:int32,add:0 ! "
-                    f"queue ! mux.sink_1 "
+                    f"crop.info "
+                )
+
+                pipeline += (
+                    # Crop tensor
+                    # f"tensor_mux name=mux ! "
+                    # f"other/tensors ! "
+                    # f"tensor_crop name=crop ! "
+                    f"crop. ! "
+                    f"tensor_decoder mode=direct_video ! video/x-raw ! "
+
+                    # Face landmark detection
+                    f"videoscale ! video/x-raw,width=192,height=192 ! "
+                    f"videoconvert ! video/x-raw,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+
+                    # Decode + Ear detection
+                    f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
+                    # f"tensor_filter framework=ear_eval model=dummy2 ! "
+
+                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
                 )
 
                 # Branch 3: Debug display

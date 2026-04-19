@@ -158,7 +158,7 @@ blaze_getOutputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
   info->num_tensors = 1;
-  info->info[0].type = _NNS_FLOAT32;
+  info->info[0].type = _NNS_INT32;
   info->info[0].dimension[0] = OUTPUT_DIM; 
   info->info[0].dimension[1] = 1;
   info->info[0].dimension[2] = 1;
@@ -177,7 +177,8 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   
   float *boxes = (float *)input[0].data;
   float *scores = (float *)input[1].data;
-  float *out_ptr = (float *)output[0].data;
+  // float *out_ptr = (float *)output[0].data;
+  int *out_ptr = (int *)output[0].data;
   
   int best_idx = -1;
   float max_score = -1e10f;
@@ -216,13 +217,25 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float xmin = fmaxf(0.0f, cx - w / 2.0f);
   float ymin = fmaxf(0.0f, cy - h / 2.0f);
 
-  out_ptr[0] = xmin;
-  out_ptr[1] = ymin;
-  out_ptr[2] = fminf(w, width_img - xmin);
-  out_ptr[3] = fminf(h, height_img - ymin);
+  if (xmin < 0) xmin = 0;
+  if (ymin < 0) ymin = 0;
 
-  if (out_ptr[2] <= 0) out_ptr[2] = 1.0f;
-  if (out_ptr[3] <= 0) out_ptr[3] = 1.0f;
+  if (w <= 0) w = 1;
+  if (h <= 0) h = 1;
+
+  if (xmin + w > width_img)
+      w = width_img - xmin;
+
+  if (ymin + h > height_img)
+      h = height_img - ymin;
+
+  out_ptr[0] = (int)xmin;
+  out_ptr[1] = (int)ymin;
+  out_ptr[2] = (int)w;
+  out_ptr[3] = (int)h;
+
+  printf("BBOX: %d %d %d %d\n",
+       out_ptr[0], out_ptr[1], out_ptr[2], out_ptr[3]);
 
   if (OUTPUT_DIM == 16) {
     // 2. Decode 6 Landmarks
