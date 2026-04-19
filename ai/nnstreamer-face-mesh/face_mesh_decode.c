@@ -24,6 +24,9 @@ typedef struct {
   float height_img;
 } facemesh_pdata;
 
+static void facemesh_close (const GstTensorFilterProperties * prop,
+    void **private_data);
+
 /**
  * Check condition to reopen model.
  */
