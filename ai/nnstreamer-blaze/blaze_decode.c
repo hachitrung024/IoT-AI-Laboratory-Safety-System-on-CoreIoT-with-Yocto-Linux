@@ -8,8 +8,8 @@
 #define BOX_SIZE 16
 #define SCORE_IDX 14336
 // #define OUTPUT_DIM 16   // 4 (bbox) + 12 (6 landmarks * 2)
-// #define OUTPUT_DIM 4   // 4 (bbox) for pipeline
-#define OUTPUT_DIM 7   // For tensor_crop format
+#define OUTPUT_DIM 4   // 4 (bbox) for pipeline
+// #define OUTPUT_DIM 7   // For tensor_crop format
 
 #define CLAMP(x) (fmaxf(0.0f, fminf(1.0f, x)))
 
@@ -223,15 +223,10 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   xmax = CLAMP(xmax);
   ymax = CLAMP(ymax);
 
-  out_ptr[0] = 1.0f;   // num_objects
-
-  out_ptr[1] = ymin;
-  out_ptr[2] = xmin;
-  out_ptr[3] = ymax;
-  out_ptr[4] = xmax;
-
-  out_ptr[5] = 0.0f;        // class_id (face)
-  out_ptr[6] = confidence;  // score
+  out_ptr[0] = ymin;
+  out_ptr[1] = xmin;
+  out_ptr[2] = ymax;
+  out_ptr[3] = xmax;
 
   printf("[blaze] ymin=%f xmin=%f ymax=%f xmax=%f score=%f\n",
         ymin, xmin, ymax, xmax, confidence);
