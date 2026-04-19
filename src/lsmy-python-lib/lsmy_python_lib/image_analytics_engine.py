@@ -218,10 +218,9 @@ class ImageAnalyticsEngine:
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
-                    # f"tensor_mux name=mux ! "
                     f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
                     f"identity name=infer_end signal-handoffs=true ! "
-                    f"tensor_mux name=mux " 
+                    f"queue ! mux.sink_1 "
                 )
 
                 # Branch 2: Frame raw branch
@@ -229,10 +228,12 @@ class ImageAnalyticsEngine:
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
-                    f"mux. "
+                    f"queue ! mux.sink_0 "
 
                     # Crop tensor
-                    f"mux. ! tensor_crop ! "
+                    f"tensor_mux name=mux ! "
+                    f"tensor_crop ! "
+                    f"tensor_decoder mode=direct_video ! "
 
                     # Face landmark detection
                     f"videoscale ! video/x-raw,width=192,height=192 ! "

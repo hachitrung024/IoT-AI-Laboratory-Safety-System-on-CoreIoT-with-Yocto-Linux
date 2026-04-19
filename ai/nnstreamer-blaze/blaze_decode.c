@@ -7,8 +7,8 @@
 #define NUM_ANCHORS 896
 #define BOX_SIZE 16
 #define SCORE_IDX 14336
-#define OUTPUT_DIM 16   // 4 (bbox) + 12 (6 landmarks * 2)
-// #define OUTPUT_DIM 4   // 4 (bbox) for pipeline
+// #define OUTPUT_DIM 16   // 4 (bbox) + 12 (6 landmarks * 2)
+#define OUTPUT_DIM 4   // 4 (bbox) for pipeline
 
 typedef struct {
     float x;

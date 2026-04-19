@@ -4,7 +4,6 @@
 #include <glib.h>
 #include <nnstreamer_plugin_api_filter.h>
 
-#define NUM_ANCHORS 896
 #define NUM_LANDMARKS 468
 #define LANDMARK_DIM 3
 #define OUTPUT_DIM (NUM_LANDMARKS * 2)
@@ -19,7 +18,6 @@ void fini_filter_facemesh (void) __attribute__ ((destructor));
 
 typedef struct {
   gchar *model_path;
-  Anchor anchors[NUM_ANCHORS];
   float width_img;
   float height_img;
 } facemesh_pdata;
