@@ -8,7 +8,10 @@
 #define BOX_SIZE 16
 #define SCORE_IDX 14336
 // #define OUTPUT_DIM 16   // 4 (bbox) + 12 (6 landmarks * 2)
-#define OUTPUT_DIM 4   // 4 (bbox) for pipeline
+// #define OUTPUT_DIM 4   // 4 (bbox) for pipeline
+#define OUTPUT_DIM 7   // For tensor_crop format
+
+#define CLAMP(x) (fmaxf(0.0f, fminf(1.0f, x)))
 
 typedef struct {
     float x;
@@ -158,8 +161,7 @@ blaze_getOutputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
   info->num_tensors = 1;
-  info->format = _NNS_TENSOR_FORMAT_FLEXIBLE; 
-  info->info[0].type = _NNS_INT32;
+  info->info[0].type = _NNS_FLOAT32;
   info->info[0].dimension[0] = OUTPUT_DIM; 
   info->info[0].dimension[1] = 1;
   info->info[0].dimension[2] = 1;
@@ -178,8 +180,7 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   
   float *boxes = (float *)input[0].data;
   float *scores = (float *)input[1].data;
-  // float *out_ptr = (float *)output[0].data;
-  int *out_ptr = (int *)output[0].data;
+  float *out_ptr = (float *)output[0].data;
   
   int best_idx = -1;
   float max_score = -1e10f;
@@ -196,10 +197,7 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float threshold = 0.75f;
 
   if (best_idx == -1 || confidence < threshold) {
-      out_ptr[0] = 0; // xmin
-      out_ptr[1] = 0; // ymin
-      out_ptr[2] = 1; // width
-      out_ptr[3] = 1; // height
+      memset(out_ptr, 0, sizeof(float) * OUTPUT_DIM);
       return 0;
   }
 
@@ -210,45 +208,33 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   float width_img = pdata->width_img;
   float height_img = pdata->height_img;
 
-  float cx = (raw_box[1] / 128.0f + anchor.x) * width_img;
-  float cy = (raw_box[0] / 128.0f + anchor.y) * height_img;
-  float w = (raw_box[3] / 128.0f) * width_img;
-  float h = (raw_box[2] / 128.0f) * height_img;
+  float cx = raw_box[1] / 128.0f + anchor.x;
+  float cy = raw_box[0] / 128.0f + anchor.y;
+  float w  = raw_box[3] / 128.0f;
+  float h  = raw_box[2] / 128.0f;
 
-  float xmin = fmaxf(0.0f, cx - w / 2.0f);
-  float ymin = fmaxf(0.0f, cy - h / 2.0f);
+  float xmin = cx - w / 2.0f;
+  float ymin = cy - h / 2.0f;
+  float xmax = cx + w / 2.0f;
+  float ymax = cy + h / 2.0f;
 
-  if (xmin < 0) xmin = 0;
-  if (ymin < 0) ymin = 0;
+  xmin = CLAMP(xmin);
+  ymin = CLAMP(ymin);
+  xmax = CLAMP(xmax);
+  ymax = CLAMP(ymax);
 
-  if (w <= 0) w = 1;
-  if (h <= 0) h = 1;
+  out_ptr[0] = 1.0f;   // num_objects
 
-  if (xmin + w > width_img)
-      w = width_img - xmin;
+  out_ptr[1] = ymin;
+  out_ptr[2] = xmin;
+  out_ptr[3] = ymax;
+  out_ptr[4] = xmax;
 
-  if (ymin + h > height_img)
-      h = height_img - ymin;
+  out_ptr[5] = 0.0f;        // class_id (face)
+  out_ptr[6] = confidence;  // score
 
-  out_ptr[0] = (int)xmin;
-  out_ptr[1] = (int)ymin;
-  out_ptr[2] = (int)w;
-  out_ptr[3] = (int)h;
-
-  printf("BBOX: %d %d %d %d\n",
-       out_ptr[0], out_ptr[1], out_ptr[2], out_ptr[3]);
-
-  if (OUTPUT_DIM == 16) {
-    // 2. Decode 6 Landmarks
-    for (int i = 0; i < 6; i++) {
-      float kx_raw = raw_box[4 + i * 2];
-      float ky_raw = raw_box[4 + i * 2 + 1];
-      
-      // out_ptr[4...15]
-      out_ptr[4 + i * 2]     = (kx_raw / 128.0f + anchor.x) * width_img; // landmark_x
-      out_ptr[4 + i * 2 + 1] = (ky_raw / 128.0f + anchor.y) * height_img; // landmark_y
-    }
-  }
+  printf("[blaze] ymin=%f xmin=%f ymax=%f xmax=%f score=%f\n",
+        ymin, xmin, ymax, xmax, confidence);
 
   return 0;
 }
