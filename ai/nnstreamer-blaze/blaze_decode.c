@@ -215,14 +215,16 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   out_ptr[2] = w;
   out_ptr[3] = h;
 
-  // 2. Decode 6 Landmarks
-  for (int i = 0; i < 6; i++) {
-    float kx_raw = raw_box[4 + i * 2];
-    float ky_raw = raw_box[4 + i * 2 + 1];
-    
-    // out_ptr[4...15]
-    out_ptr[4 + i * 2]     = (kx_raw / 128.0f + anchor.x) * width_img; // landmark_x
-    out_ptr[4 + i * 2 + 1] = (ky_raw / 128.0f + anchor.y) * height_img; // landmark_y
+  if (OUTPUT_DIM == 16) {
+    // 2. Decode 6 Landmarks
+    for (int i = 0; i < 6; i++) {
+      float kx_raw = raw_box[4 + i * 2];
+      float ky_raw = raw_box[4 + i * 2 + 1];
+      
+      // out_ptr[4...15]
+      out_ptr[4 + i * 2]     = (kx_raw / 128.0f + anchor.x) * width_img; // landmark_x
+      out_ptr[4 + i * 2 + 1] = (ky_raw / 128.0f + anchor.y) * height_img; // landmark_y
+    }
   }
 
   return 0;
