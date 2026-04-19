@@ -202,38 +202,16 @@ class ImageAnalyticsEngine:
             pipeline = (
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
+                f"tee name=t "
             )
             
             if self.debug_mode:
-                # Branch 1: Face detection Model
                 pipeline += (
-                    # Split pipeline into three branches
-                    f"tee name=t "
-                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
-                    f"videoscale ! "
-                    f"video/x-raw,width=128,height=128 ! "
-                    f"videoconvert ! "
-                    f"video/x-raw,format=RGB ! "
-                    f"tensor_converter ! "
-                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
-                    f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
-                    f"identity name=infer_end signal-handoffs=true ! "
-                    f"queue ! mux.sink_1 "
-                )
-
-                # Branch 2: Frame raw branch
-                pipeline += (
-                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
-                    f"videoconvert ! video/x-raw,format=RGB ! "
-                    f"tensor_converter ! "
-                    f"queue ! mux.sink_0 "
-
                     # Crop tensor
                     f"tensor_mux name=mux ! "
+                    f"other/tensors ! "
                     f"tensor_crop ! "
-                    f"tensor_decoder mode=direct_video ! "
+                    f"tensor_decoder mode=direct_video ! video/x-raw ! "
 
                     # Face landmark detection
                     f"videoscale ! video/x-raw,width=192,height=192 ! "
@@ -247,6 +225,32 @@ class ImageAnalyticsEngine:
                     # f"tensor_filter framework=ear_eval model=dummy2 ! "
 
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
+                )
+
+                # Branch 1: Frame raw branch
+                pipeline += (
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
+                    f"videoconvert ! video/x-raw,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"queue ! mux.sink_0 "
+                )
+
+                # Branch 2: Face detection Model
+                pipeline += (
+                    # Split pipeline into three branches
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
+                    f"videoscale ! "
+                    f"video/x-raw,width=128,height=128 ! "
+                    f"videoconvert ! "
+                    f"video/x-raw,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"identity name=infer_start signal-handoffs=true ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
+                    f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
+                    f"tensor_transform mode=arithmetic option=typecast:int32,add:0 ! "
+                    f"queue ! mux.sink_1 "
                 )
 
                 # Branch 3: Debug display
