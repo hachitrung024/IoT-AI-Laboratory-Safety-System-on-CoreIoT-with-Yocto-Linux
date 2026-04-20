@@ -106,18 +106,18 @@ class ImageAnalyticsEngine:
             log.info("Creating pipeline: %s", pipeline_str)
 
             self.pipeline = Gst.parse_launch(pipeline_str)
-            # self.appsink = self.pipeline.get_by_name("appsink")
-            self.cropsink = self.pipeline.get_by_name("cropsink")
+            self.appsink = self.pipeline.get_by_name("appsink")
+            # self.cropsink = self.pipeline.get_by_name("cropsink")
             # self.overlay = self.pipeline.get_by_name("overlay")
 
             self.infer_start = self.pipeline.get_by_name("infer_start")
             self.infer_end = self.pipeline.get_by_name("infer_end")
 
             if self.appsink is None:
-                # raise RuntimeError("appsink element not found in pipeline")
-                pass
+                raise RuntimeError("appsink element not found in pipeline")
             if self.cropsink is None and self.debug_mode:
-                raise RuntimeError("cropsink element not found in pipeline")
+                # raise RuntimeError("cropsink element not found in pipeline")
+                pass
             if self.overlay is None and self.debug_mode:
                 # raise RuntimeError("overlay element not found in pipeline")
                 pass
@@ -136,8 +136,8 @@ class ImageAnalyticsEngine:
             self.appsink.set_property("sync", False)
 
             # Connect signal: new-sample
-            # self.appsink.connect("new-sample", self.on_new_sample)
-            self.cropsink.connect("new-data", self.on_new_crop_debug)
+            self.appsink.connect("new-sample", self.on_new_sample)
+            # self.cropsink.connect("new-data", self.on_new_crop_debug)
 
             # Connect signal: AI inference
             if self.use_model:
@@ -255,21 +255,25 @@ class ImageAnalyticsEngine:
                 # Merge tensor crop pipeline
                 pipeline += (
                     f"crop. ! "
-                    f"tensor_debug name=debug_crop ! "
-                    f"tensor_sink name=cropsink"
+                    # f"tensor_debug name=debug_crop ! "
+                    # f"tensor_sink name=cropsink"
+                    f"queue ! "
+                    f"tensor_filter framework=crop_decode model=dummy1 custom=192,192,3 ! "
 
                     # Face landmark detection
+                    # f"tensor_decoder mode=direct_video ! "
+                    # f"videoconvert ! "
                     # f"videoscale ! video/x-raw,width=192,height=192 ! "
                     # f"videoconvert ! video/x-raw,format=RGB ! "
                     # f"tensor_converter ! "
                     # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    # f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection
-                    # f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
-                    # f"tensor_filter framework=ear_eval model=dummy2 ! "
+                    f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
+                    # f"tensor_filter framework=ear_eval model=dummy3 ! "
 
-                    # f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
+                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
                 )
 
                 # 3. Debug display
@@ -305,21 +309,24 @@ class ImageAnalyticsEngine:
                     f"crop.info "
 
                     f"crop. ! "
-                    f"tensor_debug name=debug_crop ! "
-                    f"tensor_sink name=cropsink"
+                    # f"tensor_debug name=debug_crop ! "
+                    # f"tensor_sink name=cropsink"
+                    f"queue ! "
 
                     # Face landmark detection
-                    # f"videoscale ! video/x-raw,width=192,height=192 ! "
+                    f"tensor_decoder mode=direct_video ! "
+                    f"videoconvert ! "
+                    f"videoscale ! video/x-raw,width=192,height=192 ! "
                     # f"videoconvert ! video/x-raw,format=RGB ! "
-                    # f"tensor_converter ! "
-                    # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    # f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+                    f"tensor_converter ! "
+                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection
-                    # f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
+                    f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
                     # f"tensor_filter framework=ear_eval model=dummy2 ! "
 
-                    # f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
+                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
                 )
         else:
             # No use of model, just raw frames and debug          
