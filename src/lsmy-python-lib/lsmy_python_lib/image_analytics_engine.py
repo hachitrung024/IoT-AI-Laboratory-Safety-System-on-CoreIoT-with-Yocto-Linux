@@ -57,6 +57,7 @@ class ImageAnalyticsEngine:
         self.overlay = None
         self.infer_start = None
         self.infer_end = None
+        self.cropsink = None
 
         self._infer_timestamps = {}
 
@@ -105,16 +106,21 @@ class ImageAnalyticsEngine:
             log.info("Creating pipeline: %s", pipeline_str)
 
             self.pipeline = Gst.parse_launch(pipeline_str)
-            self.appsink = self.pipeline.get_by_name("appsink")
-            self.overlay = self.pipeline.get_by_name("overlay")
+            # self.appsink = self.pipeline.get_by_name("appsink")
+            self.cropsink = self.pipeline.get_by_name("cropsink")
+            # self.overlay = self.pipeline.get_by_name("overlay")
 
             self.infer_start = self.pipeline.get_by_name("infer_start")
             self.infer_end = self.pipeline.get_by_name("infer_end")
 
             if self.appsink is None:
-                raise RuntimeError("appsink element not found in pipeline")
+                # raise RuntimeError("appsink element not found in pipeline")
+                pass
+            if self.cropsink is None and self.debug_mode:
+                raise RuntimeError("cropsink element not found in pipeline")
             if self.overlay is None and self.debug_mode:
-                raise RuntimeError("overlay element not found in pipeline")
+                # raise RuntimeError("overlay element not found in pipeline")
+                pass
             if self.infer_start is None and self.use_model:
                 raise RuntimeError("infer_start element not found in pipeline")
             if self.infer_end is None and self.use_model:
@@ -130,14 +136,16 @@ class ImageAnalyticsEngine:
             self.appsink.set_property("sync", False)
 
             # Connect signal: new-sample
-            self.appsink.connect("new-sample", self.on_new_sample)
+            # self.appsink.connect("new-sample", self.on_new_sample)
+            self.cropsink.connect("new-data", self.on_new_crop_debug)
 
             # Connect signal: AI inference
             if self.use_model:
                 self.infer_start.connect("handoff", self.on_infer_start)
                 self.infer_end.connect("handoff", self.on_infer_end)
             if self.debug_mode:
-                self.overlay.connect("draw", self.on_draw_overlay)
+                # self.overlay.connect("draw", self.on_draw_overlay)
+                pass
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
@@ -194,23 +202,28 @@ class ImageAnalyticsEngine:
     def build_pipeline_str(self):
         r"""
         The pipeline:
-                                                       / -> inference ->     \    / -> appsink
-          libcamerasrc -> videoconvert -> videoscale ->                        ->
-                                                       \ -> non-inference -> /    \ -> autovideosink
+                                                       / -> Raw frame ->     \    
+          libcamerasrc -> videoconvert -> videoscale ->                        -> tensor_crop -> Face mesh -> /
+                                                       \ -> Face detection -> /  
+                                                        \ -> Overlay -> /
         """
+
         if self.use_model:
             pipeline = (
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"tee name=t "
             )
-            
+
             if self.debug_mode:
+                # Two sinks for tensor crop:
+                # 1. Raw frame 
+                # 2. Face detection result
                 pipeline += (
                     f"tensor_crop name=crop silent=false "
                 )
 
-                # Branch 1: Frame raw branch
+                # 1. Raw frame
                 pipeline += (
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoconvert ! video/x-raw,format=RGB ! "
@@ -218,66 +231,98 @@ class ImageAnalyticsEngine:
                     f"crop.raw "
                 )
 
-                # Branch 2: Face detection Model
+                # 2. Face detection result
                 pipeline += (
-                    # Split pipeline into three branches
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
-                    f"videoscale ! "
-                    f"video/x-raw,width=128,height=128 ! "
-                    f"videoconvert ! "
-                    f"video/x-raw,format=RGB ! "
+                    f"videoscale ! video/x-raw,width=128,height=128 ! "
+                    f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
-                    f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
+
+                    # Blaze face detection model
+                    f"tensor_filter framework=tensorflow2-lite "
+                    f"model={self.model_path} custom=delegate:xnnpack ! "
+
+                    # Blaze decode plugin
+                    f"tensor_filter framework=blaze_decode model=dummy "
+                    f"custom={self.width},{self.height} ! "
+
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"crop.info "
                 )
 
+                # Merge tensor crop pipeline
                 pipeline += (
-                    # Crop tensor
-                    # f"tensor_mux name=mux ! "
-                    # f"other/tensors ! "
-                    # f"tensor_crop name=crop ! "
                     f"crop. ! "
-                    f"tensor_decoder mode=direct_video ! video/x-raw ! "
+                    f"tensor_debug name=debug_crop ! "
+                    f"tensor_sink name=cropsink"
 
                     # Face landmark detection
-                    f"videoscale ! video/x-raw,width=192,height=192 ! "
+                    # f"videoscale ! video/x-raw,width=192,height=192 ! "
+                    # f"videoconvert ! video/x-raw,format=RGB ! "
+                    # f"tensor_converter ! "
+                    # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    # f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+
+                    # Decode + Ear detection
+                    # f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
+                    # f"tensor_filter framework=ear_eval model=dummy2 ! "
+
+                    # f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
+                )
+
+                # 3. Debug display
+                # pipeline += (
+                #     f"t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! cairooverlay name=overlay ! "
+                #     f"autovideosink sync=false "
+                # )
+            else:
+                # No debug
+                pipeline += (
+                    f"tensor_crop name=crop silent=false "
+
+                    # Raw frame
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
+                    f"videoconvert ! video/x-raw,format=RGB ! "
+                    f"tensor_converter ! "
+                    f"crop.raw "
+
+                    # Face detection
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! "
+                    f"videoscale ! video/x-raw,width=128,height=128 ! "
                     f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+                    f"identity name=infer_start signal-handoffs=true ! "
+                    # Blaze face detection model
+                    f"tensor_filter framework=tensorflow2-lite "
+                    f"model={self.model_path} custom=delegate:xnnpack ! "
+                    # Blaze decode plugin
+                    f"tensor_filter framework=blaze_decode model=dummy "
+                    f"custom={self.width},{self.height} ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
+                    f"crop.info "
+
+                    f"crop. ! "
+                    f"tensor_debug name=debug_crop ! "
+                    f"tensor_sink name=cropsink"
+
+                    # Face landmark detection
+                    # f"videoscale ! video/x-raw,width=192,height=192 ! "
+                    # f"videoconvert ! video/x-raw,format=RGB ! "
+                    # f"tensor_converter ! "
+                    # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
+                    # f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection
-                    f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
+                    # f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
                     # f"tensor_filter framework=ear_eval model=dummy2 ! "
 
-                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
-                )
-
-                # Branch 3: Debug display
-                pipeline += (
-                    f"t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! cairooverlay name=overlay ! "
-                    f"autovideosink sync=false "
-                )
-            else:
-                pipeline += (
-                    f"videoscale ! "
-                    f"video/x-raw,width=128,height=128 ! "
-                    f"videoconvert ! "
-                    f"video/x-raw,format=RGB ! "
-                    f"tensor_converter ! "
-                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"identity name=infer_start signal-handoffs=true ! "
-                    f"tensor_filter framework=tensorflow2-lite model={self.model_path} custom=delegate:xnnpack ! "
-                    # f"tensor_mux name=mux ! "
-                    f"tensor_filter framework=blaze_decode model=dummy custom={self.width},{self.height} ! "
-                    f"identity name=infer_end signal-handoffs=true ! "
-                    f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "   
+                    # f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
                 )
         else:
+            # No use of model, just raw frames and debug          
             pipeline = (
                 f"libcamerasrc ! "
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
@@ -370,6 +415,36 @@ class ImageAnalyticsEngine:
         start = self._infer_timestamps.pop(buffer.pts, None)
         if start:
             self.inference_time = (time.time() - start) * 1000
+
+    def on_new_crop_debug(self, sink, buffer):
+        log.info("Got crop tensor buffer")
+
+        success, map_info = buffer.map(Gst.MapFlags.READ)
+        if not success:
+            log.error("Cannot map buffer")
+            return
+
+        try:
+            raw = bytes(map_info.data)
+
+            print("Buffer size:", len(raw))
+            print("First 64 bytes (hex):", raw[:64].hex(" "))
+
+            header_size = 128
+            payload = raw[header_size:header_size + (640 * 480 * 3)]
+
+            img = np.frombuffer(payload, dtype=np.uint8).reshape(480, 640, 3)
+
+            print("Image shape:", img.shape)
+            print("Top-left pixel:", img[0, 0])
+            print("Center pixel:", img[240, 320])
+            print("Min/Max:", img.min(), img.max())
+
+        except Exception as e:
+            print("Error reading buffer:", e)
+
+        finally:
+            buffer.unmap(map_info)
 
     def on_draw_overlay(self, overlay, context, timestamp, duration):
         # with self.draw_overlay_lock:

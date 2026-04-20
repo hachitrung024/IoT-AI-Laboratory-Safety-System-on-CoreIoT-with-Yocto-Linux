@@ -7,7 +7,8 @@
 #define NUM_ANCHORS 896
 #define BOX_SIZE 16
 
-#define OUTPUT_DIM 4   // x, y, w, h per detection
+// x, y, w, h per detection
+#define OUTPUT_DIM 4
 
 #define CLAMP(x) (fmaxf(0.0f, fminf(1.0f, x)))
 
@@ -26,9 +27,9 @@ typedef struct {
     float height_img;
 } blaze_pdata;
 
-/* =========================
+/**
  * Create anchors
- * ========================= */
+ */
 static void generate_anchors(Anchor *anchors)
 {
     int idx = 0;
@@ -56,23 +57,21 @@ static void generate_anchors(Anchor *anchors)
     }
 }
 
-/* =========================
+/**
  * Sigmoid
- * ========================= */
+ */
 static float sigmoid(float x)
 {
     return 1.0f / (1.0f + expf(-fmaxf(fminf(x, 88.0f), -88.0f)));
 }
 
-/* =========================
- * plugin lifecycle
- * ========================= */
+
 static void blaze_close (const GstTensorFilterProperties * prop,
     void **private_data);
 
-/* =========================
- * reopen check
- * ========================= */
+/**
+ * Check condition to reopen model.
+ */
 static int blaze_reopen (const GstTensorFilterProperties * prop,
     void **private_data)
 {
@@ -87,9 +86,9 @@ static int blaze_reopen (const GstTensorFilterProperties * prop,
     return 0;
 }
 
-/* =========================
- * open
- * ========================= */
+/**
+ * Init sub-plugin
+ */
 static int blaze_open (const GstTensorFilterProperties * prop,
     void **private_data)
 {
@@ -122,9 +121,12 @@ static int blaze_open (const GstTensorFilterProperties * prop,
     return 0;
 }
 
-/* =========================
- * input dim
- * ========================= */
+/**
+ * @brief The standard tensor_filter callback for static input/output dimension.
+ * @note If you want to support flexible/dynamic input/output dimension,
+ *       read nnstreamer_plugin_api_filter.h and supply the
+ *       setInputDimension callback.
+ */
 static int blaze_getInputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
@@ -158,9 +160,12 @@ static int blaze_getInputDim (const GstTensorFilterProperties * prop,
     return 0;
 }
 
-/* =========================
- * output dim (flex tensor)
- * ========================= */
+/**
+ * @brief The standard tensor_filter callback for static input/output dimension.
+ * @note If you want to support flexible/dynamic input/output dimension,
+ *       read nnstreamer_plugin_api_filter.h and supply the
+ *       setInputDimension callback.
+ */
 static int blaze_getOutputDim (const GstTensorFilterProperties * prop,
     void **private_data, GstTensorsInfo * info)
 {
@@ -177,9 +182,9 @@ static int blaze_getOutputDim (const GstTensorFilterProperties * prop,
     return 0;
 }
 
-/* =========================
- * invoke
- * ========================= */
+/**
+ * Invoke sub-plugin
+ */
 static int blaze_invoke (const GstTensorFilterProperties * prop,
     void **private_data,
     const GstTensorMemory * input,
@@ -236,9 +241,9 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     return 0;
 }
 
-/* =========================
- * close
- * ========================= */
+/**
+ * Close sub-plugin
+ */
 static void blaze_close (const GstTensorFilterProperties * prop,
     void **private_data)
 {
@@ -255,9 +260,9 @@ static void blaze_close (const GstTensorFilterProperties * prop,
     }
 }
 
-/* =========================
- * register
- * ========================= */
+/**
+ * Register sub-plugin
+ */
 static gchar filter_subplugin_blaze[] = "blaze_decode";
 
 static GstTensorFilterFramework blaze_custom = {
