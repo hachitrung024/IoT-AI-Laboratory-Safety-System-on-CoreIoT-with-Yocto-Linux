@@ -169,7 +169,7 @@ static int blaze_getOutputDim (const GstTensorFilterProperties * prop,
     info->info[0].type = _NNS_UINT32;
 
     // num detections + (x,y,w,h)*N
-    info->info[0].dimension[0] = 1 + (NUM_ANCHORS * OUTPUT_DIM);
+    info->info[0].dimension[0] = 4;
     info->info[0].dimension[1] = 1;
     info->info[0].dimension[2] = 1;
     info->info[0].dimension[3] = 1;
@@ -189,49 +189,49 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
 
     float *boxes = (float *) input[0].data;
     float *scores = (float *) input[1].data;
-
     uint32_t *out_ptr = (uint32_t *) output[0].data;
 
-    int idx = 0;
+    int best_idx = -1;
+    float max_score = -1e10f;
 
     for (int i = 0; i < NUM_ANCHORS; i++) {
-
-        float score = sigmoid(scores[i]);
-
-        if (score < 0.75f)
-            continue;
-
-        float *raw_box = &boxes[i * BOX_SIZE];
-        Anchor a = pdata->anchors[i];
-
-        float cx = raw_box[1] / 128.0f + a.x;
-        float cy = raw_box[0] / 128.0f + a.y;
-        float w  = raw_box[3] / 128.0f;
-        float h  = raw_box[2] / 128.0f;
-
-        float xmin = CLAMP(cx - w / 2.0f);
-        float ymin = CLAMP(cy - h / 2.0f);
-        float xmax = CLAMP(cx + w / 2.0f);
-        float ymax = CLAMP(cy + h / 2.0f);
-
-        float bw = xmax - xmin;
-        float bh = ymax - ymin;
-
-        uint32_t x = (uint32_t)(xmin * pdata->width_img);
-        uint32_t y = (uint32_t)(ymin * pdata->height_img);
-        uint32_t w_box = (uint32_t)(bw * pdata->width_img);
-        uint32_t h_box = (uint32_t)(bh * pdata->height_img);
-
-        /* FIX: use out_ptr (NOT out) */
-        out_ptr[1 + idx * 4 + 0] = x;
-        out_ptr[1 + idx * 4 + 1] = y;
-        out_ptr[1 + idx * 4 + 2] = w_box;
-        out_ptr[1 + idx * 4 + 3] = h_box;
-
-        idx++;
+        if (scores[i] > max_score) {
+            max_score = scores[i];
+            best_idx = i;
+        }
     }
 
-    out_ptr[0] = idx;
+    float conf = sigmoid(max_score);
+    if (best_idx < 0 || conf < 0.75f) {
+        out_ptr[0] = 0;
+        out_ptr[1] = 0;
+        out_ptr[2] = 0;
+        out_ptr[3] = 0;
+        return 0;
+    }
+
+    float *raw_box = &boxes[best_idx * BOX_SIZE];
+    Anchor a = pdata->anchors[best_idx];
+
+    float cx = raw_box[1] / 128.0f + a.x;
+    float cy = raw_box[0] / 128.0f + a.y;
+    float w  = raw_box[3] / 128.0f;
+    float h  = raw_box[2] / 128.0f;
+
+    float xmin = CLAMP(cx - w / 2.0f);
+    float ymin = CLAMP(cy - h / 2.0f);
+    float xmax = CLAMP(cx + w / 2.0f);
+    float ymax = CLAMP(cy + h / 2.0f);
+
+    uint32_t x = (uint32_t)(xmin * pdata->width_img);
+    uint32_t y = (uint32_t)(ymin * pdata->height_img);
+    uint32_t w_box = (uint32_t)((xmax - xmin) * pdata->width_img);
+    uint32_t h_box = (uint32_t)((ymax - ymin) * pdata->height_img);
+
+    out_ptr[0] = x;
+    out_ptr[1] = y;
+    out_ptr[2] = w_box;
+    out_ptr[3] = h_box;
 
     return 0;
 }
