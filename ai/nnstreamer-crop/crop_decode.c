@@ -123,22 +123,58 @@ gst_crop_decode_transform_caps (GstBaseTransform * trans,
 }
 
 /* ========================= */
-/* Class init */
+/* Class */
 /* ========================= */
 static void
 gst_crop_decode_class_init (GstCropDecodeClass * klass)
 {
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstBaseTransformClass *base = GST_BASE_TRANSFORM_CLASS (klass);
 
-  base->transform = gst_crop_decode_transform;
-  base->transform_caps = gst_crop_decode_transform_caps;
+  /* ========================= */
+  /* PAD TEMPLATE */
+  /* ========================= */
+
+  GstCaps *sink_caps = gst_caps_new_any ();  // flexible tensor
+  GstCaps *src_caps = gst_caps_new_simple ("other/tensors",
+      "num_tensors", G_TYPE_INT, 1,
+      "types", G_TYPE_STRING, "float32",
+      "dimensions", G_TYPE_STRING, "3:192:192:1",
+      NULL);
+
+  gst_element_class_add_pad_template (
+      element_class,
+      gst_pad_template_new ("sink",
+          GST_PAD_SINK,
+          GST_PAD_ALWAYS,
+          sink_caps));
+
+  gst_element_class_add_pad_template (
+      element_class,
+      gst_pad_template_new ("src",
+          GST_PAD_SRC,
+          GST_PAD_ALWAYS,
+          src_caps));
+
+  /* ========================= */
+  /* METADATA */
+  /* ========================= */
 
   gst_element_class_set_static_metadata (
-      GST_ELEMENT_CLASS (klass),
+      element_class,
       "Crop Decode",
       "Filter/Tensor",
       "Decode tensor_crop output",
       "you");
+
+  /* ========================= */
+  /* TRANSFORM */
+  /* ========================= */
+
+  base->transform = gst_crop_decode_transform;
+
+  /* rất quan trọng */
+  gst_base_transform_class_set_passthrough (base, FALSE);
 }
 
 /* ========================= */
