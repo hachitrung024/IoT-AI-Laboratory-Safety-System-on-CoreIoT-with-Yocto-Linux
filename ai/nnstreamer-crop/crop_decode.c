@@ -174,7 +174,8 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   base->transform = gst_crop_decode_transform;
 
   /* rất quan trọng */
-  gst_base_transform_class_set_passthrough (base, FALSE);
+  // gst_base_transform_class_set_passthrough (base, FALSE);
+  base->passthrough_on_same_caps = FALSE;
 }
 
 /* ========================= */
