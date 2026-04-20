@@ -153,7 +153,7 @@ static int crop_open (const GstTensorFilterProperties * prop,
  *       read nnstreamer_plugin_api_filter.h and supply the
  *       setInputDimension callback.
  */
-static int crop_getInputDim (const GstTensorFilterProperties * prop,
+static int crop_setInputDim (const GstTensorFilterProperties * prop,
     void **private_data, const GstTensorsInfo * in_info, GstTensorsInfo * out_info)
 {
     crop_pdata *pdata = (crop_pdata *) (*private_data);
@@ -301,7 +301,7 @@ static GstTensorFilterFramework crop_custom = {
     .allocate_in_invoke = FALSE,
     .run_without_model = TRUE,
     .invoke_NN = crop_invoke,
-    .getInputDimension = crop_getInputDim,
+    .setInputDimension  = crop_setInputDim,
     .getOutputDimension = crop_getOutputDim,
 #endif
     .open = crop_open,
@@ -316,7 +316,7 @@ void init_filter_crop (void)
     crop_custom.allocate_in_invoke = FALSE;
     crop_custom.run_without_model = TRUE;
     crop_custom.invoke_NN = crop_invoke;
-    crop_custom.getInputDimension = crop_getInputDim;
+    crop_custom.setInputDimension = crop_setInputDim;
     crop_custom.getOutputDimension = crop_getOutputDim;
 #endif
 
