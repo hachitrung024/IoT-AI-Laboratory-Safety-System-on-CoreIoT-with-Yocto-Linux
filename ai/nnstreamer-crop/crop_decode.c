@@ -1,21 +1,20 @@
 #include <gst/gst.h>
 #include <gst/base/gstbasetransform.h>
 
+#include <nnstreamer_plugin_api.h>
 #include <nnstreamer_util.h>
 
 #include <string.h>
 #include <math.h>
 
-/* ============================= */
-/* CONFIG */
-/* ============================= */
+#ifndef PACKAGE
+#define PACKAGE "crop_decode"
+#endif
+
 #define OUT_W 192
 #define OUT_H 192
 #define OUT_C 3
 
-/* ============================= */
-/* OBJECT STRUCT */
-/* ============================= */
 typedef struct _GstCropDecode
 {
   GstBaseTransform parent;
@@ -28,89 +27,46 @@ typedef struct _GstCropDecodeClass
 
 G_DEFINE_TYPE (GstCropDecode, gst_crop_decode, GST_TYPE_BASE_TRANSFORM);
 
-/* ============================= */
-/* PAD TEMPLATE */
-/* ============================= */
-
-/* nhận flexible tensor từ tensor_crop */
-static GstStaticPadTemplate sink_template =
-GST_STATIC_PAD_TEMPLATE ("sink",
-    GST_PAD_SINK,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("other/tensors")
-);
-
-/* output tensor static cho model landmark */
-static GstStaticPadTemplate src_template =
-GST_STATIC_PAD_TEMPLATE ("src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (
-        "other/tensors, "
-        "format=static, "
-        "type=float32, "
-        "dimension=(string)3:192:192:1"
-    )
-);
-
-/* ============================= */
-/* HELPER: RESIZE + NORMALIZE */
-/* ============================= */
+/* ========================= */
+/* Resize */
+/* ========================= */
 static void
-resize_rgb_u8_to_f32_nn (const guint8 * src,
-    guint sw, guint sh, guint sc,
-    gfloat * dst,
-    guint dw, guint dh, guint dc)
+resize_nn (const guint8 * src,
+           guint sw, guint sh, guint sc,
+           gfloat * dst)
 {
-  for (guint y = 0; y < dh; y++) {
-    guint sy = (guint) (((float) y * sh) / dh);
-    if (sy >= sh)
-      sy = sh - 1;
+  for (guint y = 0; y < OUT_H; y++) {
+    guint sy = (y * sh) / OUT_H;
+    if (sy >= sh) sy = sh - 1;
 
-    for (guint x = 0; x < dw; x++) {
-      guint sx = (guint) (((float) x * sw) / dw);
-      if (sx >= sw)
-        sx = sw - 1;
+    for (guint x = 0; x < OUT_W; x++) {
+      guint sx = (x * sw) / OUT_W;
+      if (sx >= sw) sx = sw - 1;
 
-      guint src_idx = (sy * sw + sx) * sc;
-      guint dst_idx = (y * dw + x) * dc;
+      guint sidx = (sy * sw + sx) * sc;
+      guint didx = (y * OUT_W + x) * OUT_C;
 
-      if (sc == 1 && dc == 3) {
-        float v = src[src_idx] / 255.0f;
-        dst[dst_idx + 0] = v;
-        dst[dst_idx + 1] = v;
-        dst[dst_idx + 2] = v;
-      } else {
-        for (guint c = 0; c < dc; c++) {
-          guint8 sv = src[src_idx + (c < sc ? c : sc - 1)];
-          dst[dst_idx + c] = sv / 255.0f;
-        }
+      for (guint c = 0; c < OUT_C; c++) {
+        guint8 v = src[sidx + (c < sc ? c : sc - 1)];
+        dst[didx + c] = v / 255.0f;
       }
     }
   }
 }
 
-/* ============================= */
-/* TRANSFORM FUNCTION */
-/* ============================= */
+/* ========================= */
+/* Transform */
+/* ========================= */
 static GstFlowReturn
-gst_crop_decode_transform (GstBaseTransform * base,
-    GstBuffer * inbuf,
-    GstBuffer * outbuf)
+gst_crop_decode_transform (GstBaseTransform * trans,
+                           GstBuffer * inbuf,
+                           GstBuffer * outbuf)
 {
   GstMapInfo inmap, outmap;
 
-  if (!gst_buffer_map (inbuf, &inmap, GST_MAP_READ))
-    return GST_FLOW_ERROR;
+  gst_buffer_map (inbuf, &inmap, GST_MAP_READ);
+  gst_buffer_map (outbuf, &outmap, GST_MAP_WRITE);
 
-  if (!gst_buffer_map (outbuf, &outmap, GST_MAP_WRITE)) {
-    gst_buffer_unmap (inbuf, &inmap);
-    return GST_FLOW_ERROR;
-  }
-
-  /* ============================= */
-  /* PARSE FLEXIBLE TENSOR HEADER */
-  /* ============================= */
   GstTensorMetaInfo meta;
   GstTensorInfo info;
 
@@ -118,41 +74,26 @@ gst_crop_decode_transform (GstBaseTransform * base,
   gst_tensor_info_init (&info);
 
   if (!gst_tensor_meta_info_parse_header (&meta, inmap.data)) {
-    g_printerr ("[cropdecode] parse header failed\n");
+    g_printerr ("[crop_decode] parse header failed\n");
     goto error;
   }
 
   if (!gst_tensor_meta_info_convert (&meta, &info)) {
-    g_printerr ("[cropdecode] convert meta failed\n");
+    g_printerr ("[crop_decode] convert failed\n");
     goto error;
   }
 
   gsize hsize = gst_tensor_meta_info_get_header_size (&meta);
-  gsize dsize = gst_tensor_meta_info_get_data_size (&meta);
 
-  if (hsize + dsize > inmap.size) {
-    g_printerr ("[cropdecode] invalid tensor size\n");
-    goto error;
-  }
-
-  guint8 *raw = (guint8 *) inmap.data + hsize;
+  const guint8 *raw = (guint8 *) inmap.data + hsize;
 
   guint sc = info.dimension[0];
   guint sw = info.dimension[1];
   guint sh = info.dimension[2];
 
-  if (sc == 0 || sw == 0 || sh == 0) {
-    g_printerr ("[cropdecode] invalid input dim\n");
-    goto error;
-  }
-
-  /* ============================= */
-  /* OUTPUT BUFFER */
-  /* ============================= */
   gfloat *dst = (gfloat *) outmap.data;
 
-  resize_rgb_u8_to_f32_nn (raw, sw, sh, sc,
-      dst, OUT_W, OUT_H, OUT_C);
+  resize_nn (raw, sw, sh, sc, dst);
 
   gst_buffer_unmap (inbuf, &inmap);
   gst_buffer_unmap (outbuf, &outmap);
@@ -165,66 +106,61 @@ error:
   return GST_FLOW_ERROR;
 }
 
-/* ============================= */
-/* SET CAPS */
-/* ============================= */
-static gboolean
-gst_crop_decode_set_caps (GstBaseTransform * trans,
-    GstCaps * incaps,
-    GstCaps * outcaps)
+/* ========================= */
+/* Caps */
+/* ========================= */
+static GstCaps *
+gst_crop_decode_transform_caps (GstBaseTransform * trans,
+                                GstPadDirection direction,
+                                GstCaps * caps,
+                                GstCaps * filter)
 {
-  return TRUE;
+  return gst_caps_new_simple ("other/tensors",
+      "num_tensors", G_TYPE_INT, 1,
+      "types", G_TYPE_STRING, "float32",
+      "dimensions", G_TYPE_STRING, "3:192:192:1",
+      NULL);
 }
 
-/* ============================= */
-/* CLASS INIT */
-/* ============================= */
+/* ========================= */
+/* Class init */
+/* ========================= */
 static void
 gst_crop_decode_class_init (GstCropDecodeClass * klass)
 {
-  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
-  GstBaseTransformClass *trans_class = GST_BASE_TRANSFORM_CLASS (klass);
+  GstBaseTransformClass *base = GST_BASE_TRANSFORM_CLASS (klass);
 
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&sink_template));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&src_template));
+  base->transform = gst_crop_decode_transform;
+  base->transform_caps = gst_crop_decode_transform_caps;
 
-  gst_element_class_set_static_metadata (element_class,
+  gst_element_class_set_static_metadata (
+      GST_ELEMENT_CLASS (klass),
       "Crop Decode",
       "Filter/Tensor",
-      "Decode tensor_crop output to static tensor",
-      "YourName");
-
-  trans_class->transform = gst_crop_decode_transform;
-  trans_class->set_caps = gst_crop_decode_set_caps;
-
-  gst_base_transform_set_in_place (trans_class, FALSE);
+      "Decode tensor_crop output",
+      "you");
 }
 
-/* ============================= */
-/* INIT */
-/* ============================= */
+/* ========================= */
+/* Init */
+/* ========================= */
 static void
 gst_crop_decode_init (GstCropDecode * self)
 {
 }
 
-/* ============================= */
-/* PLUGIN INIT */
-/* ============================= */
+/* ========================= */
+/* Plugin */
+/* ========================= */
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
   return gst_element_register (plugin,
-      "cropdecode",
+      "crop_decode",
       GST_RANK_NONE,
       gst_crop_decode_get_type ());
 }
 
-/* ============================= */
-/* DEFINE PLUGIN */
-/* ============================= */
 GST_PLUGIN_DEFINE (
     GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
@@ -232,7 +168,7 @@ GST_PLUGIN_DEFINE (
     "Crop decode plugin",
     plugin_init,
     "1.0",
-    "LGPL",
+    "MIT",
     "nnstreamer",
-    "nnstreamer"
+    "https://github.com"
 )
