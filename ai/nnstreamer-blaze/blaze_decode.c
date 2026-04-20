@@ -223,13 +223,19 @@ blaze_invoke (const GstTensorFilterProperties * prop, void **private_data,
   xmax = CLAMP(xmax);
   ymax = CLAMP(ymax);
 
-  out_ptr[0] = ymin;
-  out_ptr[1] = xmin;
-  out_ptr[2] = ymax;
-  out_ptr[3] = xmax;
+  float x = xmin * width_img;
+  float y = ymin * height_img;
+  float w_box = xmax - xmin;
+  float h_box = ymax - ymin;
 
-  printf("[blaze] ymin=%f xmin=%f ymax=%f xmax=%f score=%f\n",
-        ymin, xmin, ymax, xmax, confidence);
+
+  out_ptr[0] = xmin;
+  out_ptr[1] = ymin;
+  out_ptr[2] = w_box;
+  out_ptr[3] = h_box;
+
+  g_print("[blaze] ymin=%f xmin=%f wbox=%f hbox=%f \n",
+        ymin, xmin, w_box, h_box);
 
   return 0;
 }
