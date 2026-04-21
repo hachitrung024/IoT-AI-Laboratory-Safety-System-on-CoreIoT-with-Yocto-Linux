@@ -166,6 +166,8 @@ gst_crop_decode_transform_caps (GstBaseTransform * trans,
                                 GstCaps * filter)
 {
   GstCaps *result;
+  GstStructure *s;
+  const GValue *v;
 
   if (direction == GST_PAD_SINK) {
     result = gst_caps_new_simple ("other/tensors",
