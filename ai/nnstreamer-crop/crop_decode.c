@@ -62,53 +62,77 @@ gst_crop_decode_transform (GstBaseTransform * trans,
                            GstBuffer * inbuf,
                            GstBuffer * outbuf)
 {
-  GstMapInfo inmap, outmap;
-
-  gst_buffer_map (inbuf, &inmap, GST_MAP_READ);
-  gst_buffer_map (outbuf, &outmap, GST_MAP_WRITE);
-
+  GstMapInfo inmap;
+  GstMemory *inmem;
   GstTensorMetaInfo meta;
   GstTensorInfo info;
+  gsize hsize;
+  gsize outsize;
+  guint8 *dst;
+  GstMemory *omem;
+
+  if (gst_buffer_n_memory (inbuf) < 1) {
+    g_printerr ("[crop_decode] input has no memory\n");
+    return GST_FLOW_ERROR;
+  }
+
+  inmem = gst_buffer_peek_memory (inbuf, 0);
+  if (!gst_memory_map (inmem, &inmap, GST_MAP_READ)) {
+    g_printerr ("[crop_decode] map input memory failed\n");
+    return GST_FLOW_ERROR;
+  }
 
   gst_tensor_meta_info_init (&meta);
   gst_tensor_info_init (&info);
 
   if (!gst_tensor_meta_info_parse_header (&meta, inmap.data)) {
     g_printerr ("[crop_decode] parse header failed\n");
-    goto error;
+    gst_memory_unmap (inmem, &inmap);
+    return GST_FLOW_ERROR;
   }
 
   if (!gst_tensor_meta_info_validate (&meta)) {
     g_printerr ("[crop_decode] meta invalid after parse\n");
-    goto error;
+    gst_memory_unmap (inmem, &inmap);
+    return GST_FLOW_ERROR;
   }
 
   if (!gst_tensor_meta_info_convert (&meta, &info)) {
     g_printerr ("[crop_decode] convert failed\n");
-    goto error;
+    gst_memory_unmap (inmem, &inmap);
+    return GST_FLOW_ERROR;
   }
 
-  gsize hsize = gst_tensor_meta_info_get_header_size (&meta);
-
-  const guint8 *raw = (guint8 *) inmap.data + hsize;
+  hsize = gst_tensor_meta_info_get_header_size (&meta);
 
   guint sc = info.dimension[0];
   guint sw = info.dimension[1];
   guint sh = info.dimension[2];
 
-  gfloat *dst = (gfloat *) outmap.data;
+  if (sc == 0 || sw == 0 || sh == 0) {
+    g_printerr ("[crop_decode] invalid input dimension\n");
+    gst_memory_unmap (inmem, &inmap);
+    return GST_FLOW_ERROR;
+  }
 
-  resize_nn (raw, sw, sh, sc, dst);
+  outsize = OUT_W * OUT_H * OUT_C * sizeof (gfloat);
+  dst = g_malloc0 (outsize);
+  if (!dst) {
+    gst_memory_unmap (inmem, &inmap);
+    return GST_FLOW_ERROR;
+  }
 
-  gst_buffer_unmap (inbuf, &inmap);
-  gst_buffer_unmap (outbuf, &outmap);
+  resize_nn ((const guint8 *) inmap.data + hsize, sw, sh, sc, (gfloat *) dst);
+
+  gst_memory_unmap (inmem, &inmap);
+
+  gst_buffer_remove_all_memory (outbuf);
+  omem = gst_memory_new_wrapped (0, dst, outsize, 0, outsize, dst, g_free);
+  gst_buffer_append_memory (outbuf, omem);
+
+  gst_buffer_copy_into (outbuf, inbuf, GST_BUFFER_COPY_METADATA, 0, -1);
 
   return GST_FLOW_OK;
-
-error:
-  gst_buffer_unmap (inbuf, &inmap);
-  gst_buffer_unmap (outbuf, &outmap);
-  return GST_FLOW_ERROR;
 }
 
 /* ========================= */
