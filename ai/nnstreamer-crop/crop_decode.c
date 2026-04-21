@@ -63,19 +63,23 @@ gst_crop_decode_transform (GstBaseTransform * trans,
                            GstBuffer * outbuf)
 {
   GstMapInfo inmap;
-  GstMemory *inmem;
-  GstTensorMetaInfo meta;
   GstTensorInfo info;
+  GstTensorMetaInfo meta;
+
+  GstMemory *inmem;
+  GstMemory *omem;
+
   gsize hsize;
   gsize outsize;
   guint8 *dst;
-  GstMemory *omem;
 
-  if (gst_buffer_n_memory (inbuf) < 1) {
-    g_printerr ("[crop_decode] input has no memory\n");
-    return GST_FLOW_ERROR;
+  guint n_mem = gst_buffer_n_memory (inbuf);
+  if (n_mem < 1 || n_mem > 2) {
+      g_printerr ("[crop_decode] invalid memory count: %u.\n", n_mem);
+      return GST_FLOW_ERROR;
   }
 
+  // Header memory block
   inmem = gst_buffer_peek_memory (inbuf, 0);
   if (!gst_memory_map (inmem, &inmap, GST_MAP_READ)) {
     g_printerr ("[crop_decode] map input memory failed\n");
@@ -130,7 +134,7 @@ gst_crop_decode_transform (GstBaseTransform * trans,
   omem = gst_memory_new_wrapped (0, dst, outsize, 0, outsize, dst, g_free);
   gst_buffer_append_memory (outbuf, omem);
 
-  gst_buffer_copy_into (outbuf, inbuf, GST_BUFFER_COPY_METADATA, 0, -1);
+  gst_buffer_copy_into (outbuf, inbuf, GST_BUFFER_COPY_TIMESTAMPS | GST_BUFFER_COPY_FLAGS, 0, -1);
 
   return GST_FLOW_OK;
 }
@@ -177,11 +181,9 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstBaseTransformClass *base = GST_BASE_TRANSFORM_CLASS (klass);
 
-  /* ========================= */
-  /* PAD TEMPLATE */
-  /* ========================= */
-
-  GstCaps *sink_caps = gst_caps_new_any ();  // flexible tensor
+  // Sink Caps flexible tensor
+  GstCaps *sink_caps = gst_caps_new_any ();
+  // Source Caps tensor
   GstCaps *src_caps = gst_caps_new_simple ("other/tensors",
       "num_tensors", G_TYPE_INT, 1,
       "types", G_TYPE_STRING, "float32",
@@ -202,10 +204,7 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
           GST_PAD_ALWAYS,
           src_caps));
 
-  /* ========================= */
-  /* METADATA */
-  /* ========================= */
-
+  // Set static metadata
   gst_element_class_set_static_metadata (
       element_class,
       "Crop Decode",
@@ -213,14 +212,9 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
       "Decode tensor_crop output",
       "you");
 
-  /* ========================= */
-  /* TRANSFORM */
-  /* ========================= */
-
+  // Set transform
   base->transform = gst_crop_decode_transform;
   base->transform_size = gst_crop_decode_transform_size;
-
-  /* rất quan trọng */
   // gst_base_transform_class_set_passthrough (base, FALSE);
   base->passthrough_on_same_caps = FALSE;
 }
