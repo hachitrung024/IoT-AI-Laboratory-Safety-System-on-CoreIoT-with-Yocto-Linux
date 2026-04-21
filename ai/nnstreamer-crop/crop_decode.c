@@ -165,11 +165,28 @@ gst_crop_decode_transform_caps (GstBaseTransform * trans,
                                 GstCaps * caps,
                                 GstCaps * filter)
 {
-  return gst_caps_new_simple ("other/tensors",
-      "num_tensors", G_TYPE_INT, 1,
-      "types", G_TYPE_STRING, "float32",
-      "dimensions", G_TYPE_STRING, "3:192:192:1",
-      NULL);
+  GstCaps *result;
+
+  if (direction == GST_PAD_SINK) {
+    result = gst_caps_new_simple ("other/tensors",
+        "format", G_TYPE_STRING, "static",
+        "num_tensors", G_TYPE_INT, 1,
+        "types", G_TYPE_STRING, "float32",
+        "dimensions", G_TYPE_STRING, "3:192:192:1",
+        NULL);
+  } else {
+    result = gst_caps_new_simple ("other/tensors",
+        "format", G_TYPE_STRING, "flexible",
+        NULL);
+  }
+
+  if (filter) {
+    GstCaps *intersection = gst_caps_intersect_full (filter, result, GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (result);
+    return intersection;
+  }
+
+  return result;
 }
 
 static gboolean
@@ -199,13 +216,16 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   GstBaseTransformClass *base = GST_BASE_TRANSFORM_CLASS (klass);
 
   // Sink Caps flexible tensor
-  GstCaps *sink_caps = gst_caps_from_string ("other/tensors,format=flexible");
+  GstCaps *sink_caps = gst_caps_new_simple ("other/tensors",
+      "format", G_TYPE_STRING, "flexible",
+      NULL);
   // Source Caps tensor
-  GstCaps *src_caps = gst_caps_from_string (
-    "other/tensors,format=static,"
-    "num_tensors=1,"
-    "types=float32,"
-    "dimensions=3:192:192:1");
+  GstCaps *src_caps = gst_caps_new_simple ("other/tensors",
+      "format", G_TYPE_STRING, "static",
+      "num_tensors", G_TYPE_INT, 1,
+      "types", G_TYPE_STRING, "float32",
+      "dimensions", G_TYPE_STRING, "3:192:192:1",
+      NULL);
 
   gst_element_class_add_pad_template (
       element_class,
@@ -232,7 +252,7 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   // Set transform
   base->transform = gst_crop_decode_transform;
   base->transform_size = gst_crop_decode_transform_size;
-  // gst_base_transform_class_set_passthrough (base, FALSE);
+  base->transform_caps = gst_crop_decode_transform_caps;
   base->passthrough_on_same_caps = FALSE;
 }
 
