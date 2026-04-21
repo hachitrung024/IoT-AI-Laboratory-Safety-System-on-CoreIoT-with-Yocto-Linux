@@ -148,10 +148,19 @@ gst_crop_decode_transform (GstBaseTransform * trans,
   gst_memory_unmap (inmem, &inmap);
 
   gst_buffer_remove_all_memory (outbuf);
+
+  gst_buffer_copy_into (outbuf, inbuf, GST_BUFFER_COPY_TIMESTAMPS, 0, -1);
+
   omem = gst_memory_new_wrapped (0, dst, outsize, 0, outsize, dst, g_free);
   gst_buffer_append_memory (outbuf, omem);
 
-  gst_buffer_copy_into (outbuf, inbuf, GST_BUFFER_COPY_TIMESTAMPS | GST_BUFFER_COPY_FLAGS, 0, -1);
+  guint final_mem_count = gst_buffer_n_memory (outbuf);
+  g_print ("[DEBUG] [crop_decode] Sending to next: %u blocks, size %" G_GSIZE_FORMAT "\n", 
+           final_mem_count, gst_buffer_get_size(outbuf));
+
+  if (final_mem_count != 1) {
+      g_printerr ("[crop_decode] ERROR: Something added extra memory! Count: %u\n", final_mem_count);
+  }
 
   return GST_FLOW_OK;
 }
