@@ -199,13 +199,13 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   GstBaseTransformClass *base = GST_BASE_TRANSFORM_CLASS (klass);
 
   // Sink Caps flexible tensor
-  GstCaps *sink_caps = gst_caps_new_any ();
+  GstCaps *sink_caps = gst_caps_from_string ("other/tensors,format=flexible");
   // Source Caps tensor
-  GstCaps *src_caps = gst_caps_new_simple ("other/tensors",
-      "num_tensors", G_TYPE_INT, 1,
-      "types", G_TYPE_STRING, "float32",
-      "dimensions", G_TYPE_STRING, "3:192:192:1",
-      NULL);
+  GstCaps *src_caps = gst_caps_from_string (
+    "other/tensors,format=static,"
+    "num_tensors=1,"
+    "types=float32,"
+    "dimensions=3:192:192:1");
 
   gst_element_class_add_pad_template (
       element_class,
