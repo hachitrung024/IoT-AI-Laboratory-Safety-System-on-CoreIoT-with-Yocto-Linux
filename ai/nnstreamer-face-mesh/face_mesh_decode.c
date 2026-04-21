@@ -92,14 +92,21 @@ facemesh_getInputDim (const GstTensorFilterProperties * prop,
       pdata->height_img = 480.0f;
   }
 
-  info->num_tensors = 1;
+  info->num_tensors = 2;
 
-  // FaceMesh output is [468 * 3]
+  // Tensor 0: FaceMesh output is [468 * 3]
   info->info[0].type = _NNS_FLOAT32;
   info->info[0].dimension[0] = NUM_LANDMARKS * LANDMARK_DIM;
   info->info[0].dimension[1] = 1;
   info->info[0].dimension[2] = 1;
   info->info[0].dimension[3] = 1;
+
+  // Tensor 1: Score (1 value) - [1, 1, 1, 1]
+  info->info[1].type = _NNS_FLOAT32;
+  info->info[1].dimension[0] = 1;
+  info->info[1].dimension[1] = 1;
+  info->info[1].dimension[2] = 1;
+  info->info[1].dimension[3] = 1;
 
   return 0;
 }
@@ -134,6 +141,7 @@ facemesh_invoke (const GstTensorFilterProperties * prop, void **private_data,
 
   float *in_ptr = (float *)input[0].data;
   float *out_ptr = (float *)output[0].data;
+  // float score = ((float *)input[1].data)[0];
 
   float width_img = pdata->width_img;
   float height_img = pdata->height_img;
