@@ -180,6 +180,15 @@ gst_crop_decode_transform_caps (GstBaseTransform * trans,
         NULL);
   }
 
+  if (caps && gst_caps_get_size (caps) > 0) {
+    s = gst_caps_get_structure (caps, 0);
+    v = gst_structure_get_value (s, "framerate");
+    if (v) {
+      gst_caps_set_value (result, "framerate", v);
+      g_print ("[DEBUG] [crop_decode] Propagated framerate to next element\n");
+    }
+  }
+
   if (filter) {
     GstCaps *intersection = gst_caps_intersect_full (filter, result, GST_CAPS_INTERSECT_FIRST);
     gst_caps_unref (result);
@@ -219,6 +228,8 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   GstCaps *sink_caps = gst_caps_new_simple ("other/tensors",
       "format", G_TYPE_STRING, "flexible",
       NULL);
+  gst_caps_set_simple (sink_caps, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
+
   // Source Caps tensor
   GstCaps *src_caps = gst_caps_new_simple ("other/tensors",
       "format", G_TYPE_STRING, "static",
@@ -226,6 +237,7 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
       "types", G_TYPE_STRING, "float32",
       "dimensions", G_TYPE_STRING, "3:192:192:1",
       NULL);
+  gst_caps_set_simple (src_caps, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
 
   gst_element_class_add_pad_template (
       element_class,
