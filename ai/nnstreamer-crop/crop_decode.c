@@ -73,11 +73,15 @@ gst_crop_decode_transform (GstBaseTransform * trans,
   gsize outsize;
   guint8 *dst;
 
+  g_print ("[DEBUG] [crop_decode] --- New Transform Call ---\n");
+
   guint n_mem = gst_buffer_n_memory (inbuf);
   if (n_mem < 1 || n_mem > 2) {
       g_printerr ("[crop_decode] invalid memory count: %u.\n", n_mem);
       return GST_FLOW_ERROR;
   }
+
+  g_print ("[DEBUG] Buffer has %u memory blocks\n", n_mem);
 
   // Header memory block
   inmem = gst_buffer_peek_memory (inbuf, 0);
@@ -85,6 +89,19 @@ gst_crop_decode_transform (GstBaseTransform * trans,
     g_printerr ("[crop_decode] map input memory failed\n");
     return GST_FLOW_ERROR;
   }
+
+  for (guint i = 0; i < n_mem; i++) {
+      GstMemory *tmp_mem = gst_buffer_peek_memory(inbuf, i);
+      g_print ("[DEBUG] Block %u: size %" G_GSIZE_FORMAT "\n", i, gst_memory_get_sizes(tmp_mem, NULL, NULL));
+  }
+
+  g_print ("[DEBUG] [crop_decode] Inmap size: %" G_GSIZE_FORMAT "\n", inmap.size);
+
+  g_print ("[DEBUG] Header signature: ");
+  for (int i = 0; i < 8; i++) {
+      g_print ("%02x ", ((guint8 *)inmap.data)[i]);
+  }
+  g_print ("\n");
 
   gst_tensor_meta_info_init (&meta);
   gst_tensor_info_init (&info);
