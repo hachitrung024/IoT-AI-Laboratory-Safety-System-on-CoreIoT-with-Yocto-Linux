@@ -258,7 +258,8 @@ class ImageAnalyticsEngine:
                     # f"tensor_debug name=debug_crop ! "
                     # f"tensor_sink name=cropsink"
                     f"queue ! "
-                    f"tensor_filter framework=crop_decode model=dummy1 custom=192,192,3 ! "
+                    f"crop_decode ! "
+                    # f"tensor_filter framework=crop_decode model=dummy1 custom=192,192,3 ! "
 
                     # Face landmark detection
                     # f"tensor_decoder mode=direct_video ! "

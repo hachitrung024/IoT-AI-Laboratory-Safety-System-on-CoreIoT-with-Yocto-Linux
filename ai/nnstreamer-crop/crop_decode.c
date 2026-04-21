@@ -78,6 +78,11 @@ gst_crop_decode_transform (GstBaseTransform * trans,
     goto error;
   }
 
+  if (!gst_tensor_meta_info_validate (&meta)) {
+    g_printerr ("[crop_decode] meta invalid after parse\n");
+    goto error;
+  }
+
   if (!gst_tensor_meta_info_convert (&meta, &info)) {
     g_printerr ("[crop_decode] convert failed\n");
     goto error;
@@ -120,6 +125,23 @@ gst_crop_decode_transform_caps (GstBaseTransform * trans,
       "types", G_TYPE_STRING, "float32",
       "dimensions", G_TYPE_STRING, "3:192:192:1",
       NULL);
+}
+
+static gboolean
+gst_crop_decode_transform_size (GstBaseTransform * trans,
+                                GstPadDirection direction,
+                                GstCaps * caps,
+                                gsize size,
+                                GstCaps * othercaps,
+                                gsize * othersize)
+{
+  if (direction == GST_PAD_SINK) {
+    *othersize = OUT_W * OUT_H * OUT_C * sizeof (gfloat);
+    return TRUE;
+  }
+
+  *othersize = size;
+  return TRUE;
 }
 
 /* ========================= */
@@ -172,6 +194,7 @@ gst_crop_decode_class_init (GstCropDecodeClass * klass)
   /* ========================= */
 
   base->transform = gst_crop_decode_transform;
+  base->transform_size = gst_crop_decode_transform_size;
 
   /* rất quan trọng */
   // gst_base_transform_class_set_passthrough (base, FALSE);
