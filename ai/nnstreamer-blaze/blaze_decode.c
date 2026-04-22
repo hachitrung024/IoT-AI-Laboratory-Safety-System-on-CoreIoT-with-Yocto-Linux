@@ -171,7 +171,8 @@ static int blaze_getOutputDim (const GstTensorFilterProperties * prop,
 {
     info->num_tensors = 1;
 
-    info->info[0].type = _NNS_UINT32;
+    // info->info[0].type = _NNS_UINT32;
+    info->info[0].type = _NNS_FLOAT32;
 
     // num detections + (x,y,w,h)*N
     info->info[0].dimension[0] = 4;
@@ -194,7 +195,8 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
 
     float *boxes = (float *) input[0].data;
     float *scores = (float *) input[1].data;
-    uint32_t *out_ptr = (uint32_t *) output[0].data;
+    // uint32_t *out_ptr = (uint32_t *) output[0].data;
+    float *out_ptr = (float *) output[0].data;
 
     int best_idx = -1;
     float max_score = -1e10f;
@@ -233,10 +235,15 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     uint32_t w_box = (uint32_t)((xmax - xmin) * pdata->width_img);
     uint32_t h_box = (uint32_t)((ymax - ymin) * pdata->height_img);
 
-    out_ptr[0] = x;
-    out_ptr[1] = y;
-    out_ptr[2] = w_box;
-    out_ptr[3] = h_box;
+    // out_ptr[0] = x;
+    // out_ptr[1] = y;
+    // out_ptr[2] = w_box;
+    // out_ptr[3] = h_box;
+
+    out_ptr[0] = xmin * pdata->width_img;
+    out_ptr[1] = ymin * pdata->height_img;
+    out_ptr[2] = (xmax - xmin) * pdata->width_img;
+    out_ptr[3] = (ymax - ymin) * pdata->height_img;
 
     return 0;
 }
