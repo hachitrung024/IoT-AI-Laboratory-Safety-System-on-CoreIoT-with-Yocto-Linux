@@ -390,11 +390,11 @@ class ImageAnalyticsEngine:
             try:
                 res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
                 
-                log.info("Inference result len of res_array: %s", len(res_array))
-                log.info("Global min: %f", res_array.min())
-                log.info("Global max: %f", res_array.max())
+                # log.info("Inference result len of res_array: %s", len(res_array))
+                # log.info("Global min: %f", res_array.min())
+                # log.info("Global max: %f", res_array.max())
 
-                log.info("First 10 values: %s", res_array[:10])
+                # log.info("First 10 values: %s", res_array[:10])
                 
                 if len(res_array) == self.output_landmarks_dim and np.any(res_array):
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
@@ -462,20 +462,44 @@ class ImageAnalyticsEngine:
             buffer.unmap(map_info)
 
     def on_new_bbox(self, sink, buffer):
-        log.info("Got bbox tensor buffer")
+        # log.info("Got bbox tensor buffer")
 
         success, map_info = buffer.map(Gst.MapFlags.READ)
         if not success:
             return
 
         try:
-            data = np.frombuffer(map_info.data, dtype=np.float32).copy()
+            # log.info("BBox buffer size (bytes): %d", map_info.size)
+
+            # data_u32 = np.frombuffer(map_info.data, dtype=np.uint32).copy()
+            # data_f32 = np.frombuffer(map_info.data, dtype=np.float32).copy()
+
+            # log.info("BBox raw u32: %s", data_u32[:8])
+            # log.info("BBox raw f32: %s", data_f32[:8])
+
+            # raw = bytes(map_info.data)
+
+            # header = raw[:128]
+            # payload = raw[128:]
+
+            # log.info("[BBOX] payload bytes: %d", len(payload))
+            # log.info("[BBOX] payload as f32: %s", np.frombuffer(payload, dtype=np.float32))
+            # log.info("[BBOX] payload as u32: %s", np.frombuffer(payload, dtype=np.uint32))
+
+            raw = map_info.data
+
+            header_size = 128
+            payload = raw[header_size:header_size + 16]
+
+            bbox = np.frombuffer(payload, dtype=np.float32)
 
             # Debug
-            log.info("BBox raw: %s", data[:8])
+            # log.info("BBox raw: %s", data[:8])
 
-            if len(data) >= 4:
-                x, y, w, h = data[:4]
+            if len(bbox) == 4:
+                x, y, w, h = bbox
+
+                # log.info("[BBOX REAL] x=%.2f y=%.2f w=%.2f h=%.2f", x, y, w, h)
 
                 with self.draw_overlay_lock:
                     self.current_bbox = (x, y, w, h)
@@ -512,8 +536,14 @@ class ImageAnalyticsEngine:
                 context.set_source_rgb(1, 0, 0)
 
                 for lx, ly in self.current_landmarks:
-                    x = bx + float(lx) * bw
-                    y = by + float(ly) * bh
+                    nx = float(lx) / 192.0
+                    ny = float(ly) / 192.0
+
+                    x = bx + nx * bw
+                    y = by + ny * bh
+
+                    # log.info("Face mesh landmark: (%.2f, %.2f)", x, y)
+
                     context.arc(x, y, 3, 0, 2 * 3.1416)
                     context.fill()
 
