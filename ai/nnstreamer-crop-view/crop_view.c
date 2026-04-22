@@ -130,6 +130,9 @@ gst_crop_view_transform_caps (GstBaseTransform * trans,
   GstCaps *sink_caps = make_sink_caps ();
   GstCaps *src_caps = make_src_caps ();
 
+  GstStructure *s;
+  const GValue *v;
+
   (void) trans;
 
   if (direction == GST_PAD_SINK) {
