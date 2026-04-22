@@ -35,7 +35,8 @@ make_sink_caps (void)
       "format=(string)static, "
       "num_tensors=(int)1, "
       "types=(string)float32, "
-      "dimensions=(string)3:192:192:1");
+      "dimensions=(string)3:192:192:1, "
+      "framerate=(fraction)[0/1, 2147483647/1]");
 }
 
 static GstCaps *
@@ -45,8 +46,8 @@ make_src_caps (void)
       "video/x-raw, "
       "format=(string)RGB, "
       "width=(int)192, "
-      "height=(int)192, "
-      "pixel-aspect-ratio=(fraction)1/1");
+      "pixel-aspect-ratio=(fraction)1/1, "
+      "framerate=(fraction)[0/1, 2147483647/1]");
 }
 
 static inline guint8
@@ -201,9 +202,6 @@ gst_crop_view_class_init (GstCropViewClass * klass)
       gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS, sink_caps);
   GstPadTemplate *src_tmpl =
       gst_pad_template_new ("src", GST_PAD_SRC, GST_PAD_ALWAYS, src_caps);
-
-  gst_caps_set_simple (sink_caps, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
-  gst_caps_set_simple (src_caps, "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
 
   gst_element_class_add_pad_template (element_class, sink_tmpl);
   gst_element_class_add_pad_template (element_class, src_tmpl);
