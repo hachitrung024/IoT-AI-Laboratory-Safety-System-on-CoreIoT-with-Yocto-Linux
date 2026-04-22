@@ -59,6 +59,8 @@ class ImageAnalyticsEngine:
         self.pipeline = None
         self.appsink = None
         self.cropsink = None
+        self.bboxsink = None
+
         self.overlay = None
         
         self.infer_start = None
@@ -113,6 +115,8 @@ class ImageAnalyticsEngine:
             self.pipeline = Gst.parse_launch(pipeline_str)
             self.appsink = self.pipeline.get_by_name("appsink")
             # self.cropsink = self.pipeline.get_by_name("cropsink")
+            self.bboxsink = self.pipeline.get_by_name("bboxsink")
+
             self.overlay = self.pipeline.get_by_name("overlay")
 
             self.infer_start = self.pipeline.get_by_name("infer_start")
@@ -120,9 +124,10 @@ class ImageAnalyticsEngine:
 
             if self.appsink is None:
                 raise RuntimeError("appsink element not found in pipeline")
-            if self.cropsink is None and self.debug_mode:
-                # raise RuntimeError("cropsink element not found in pipeline")
-                pass
+            # if self.cropsink is None and self.debug_mode:
+            #     raise RuntimeError("cropsink element not found in pipeline")
+            if self.bboxsink is None and self.debug_mode:
+                raise RuntimeError("bboxsink element not found in pipeline")
             if self.overlay is None and self.debug_mode:
                 raise RuntimeError("overlay element not found in pipeline")
             if self.infer_start is None and self.use_model:
@@ -142,6 +147,7 @@ class ImageAnalyticsEngine:
             # Connect signal: new-sample
             self.appsink.connect("new-sample", self.on_new_sample)
             # self.cropsink.connect("new-data", self.on_new_crop_debug)
+            self.bboxsink.connect("new-data", self.on_new_bbox)
 
             # Connect signal: AI inference
             if self.use_model:
@@ -250,7 +256,10 @@ class ImageAnalyticsEngine:
                     # Blaze decode plugin
                     f"tensor_filter framework=blaze_decode model=dummy "
                     f"custom={self.width},{self.height} ! "
+                    f"tee name=td "
+                    f"td. ! queue ! tensor_sink name=bboxsink "
 
+                    f"td. ! queue ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"crop.info "
                 )
@@ -262,6 +271,7 @@ class ImageAnalyticsEngine:
                     # f"tensor_sink name=cropsink"
                     f"queue ! "
                     f"crop_decode ! "
+                    # f"crop_view ! videoconvert ! autovideosink sync=false"
 
                     # Face landmark detection
                     f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
@@ -381,7 +391,12 @@ class ImageAnalyticsEngine:
                 res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
                 
                 log.info("Inference result len of res_array: %s", len(res_array))
-                if len(res_array) == self.output_landmarks_dim:
+                log.info("Global min: %f", res_array.min())
+                log.info("Global max: %f", res_array.max())
+
+                log.info("First 10 values: %s", res_array[:10])
+                
+                if len(res_array) == self.output_landmarks_dim and np.any(res_array):
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
@@ -446,6 +461,30 @@ class ImageAnalyticsEngine:
         finally:
             buffer.unmap(map_info)
 
+    def on_new_bbox(self, sink, buffer):
+        log.info("Got bbox tensor buffer")
+
+        success, map_info = buffer.map(Gst.MapFlags.READ)
+        if not success:
+            return
+
+        try:
+            data = np.frombuffer(map_info.data, dtype=np.float32).copy()
+
+            # Debug
+            log.info("BBox raw: %s", data[:8])
+
+            if len(data) >= 4:
+                x, y, w, h = data[:4]
+
+                with self.draw_overlay_lock:
+                    self.current_bbox = (x, y, w, h)
+
+        except Exception as e:
+            log.error("Error parsing bbox: %s", e)
+        finally:
+            buffer.unmap(map_info)
+
     def on_draw_overlay(self, overlay, context, timestamp, duration):
         # with self.draw_overlay_lock:
         #     if self.current_bbox is None:
@@ -459,12 +498,23 @@ class ImageAnalyticsEngine:
         # context.rectangle(x, y, w, h)
         # context.stroke()
 
+        # with self.draw_overlay_lock:
+        #     # draw landmarks
+        #     if self.current_landmarks is not None:
+        #         context.set_source_rgb(1, 0, 0)
+        #         for kx, ky in self.current_landmarks:
+        #             context.arc(kx, ky, 3, 0, 2 * 3.1416)
+        #             context.fill()
+
         with self.draw_overlay_lock:
-            # draw landmarks
-            if self.current_landmarks is not None:
+            if self.current_landmarks is not None and self.current_bbox is not None and np.any(self.current_landmarks) and np.any(self.current_bbox):
+                bx, by, bw, bh = self.current_bbox
                 context.set_source_rgb(1, 0, 0)
-                for kx, ky in self.current_landmarks:
-                    context.arc(kx, ky, 3, 0, 2 * 3.1416)
+
+                for lx, ly in self.current_landmarks:
+                    x = bx + float(lx) * bw
+                    y = by + float(ly) * bh
+                    context.arc(x, y, 3, 0, 2 * 3.1416)
                     context.fill()
 
         # draw info panel
@@ -603,7 +653,7 @@ class ImageAnalyticsEngine:
                         # Debug display
                         if self.debug_mode and self.overlay:
                             with self.draw_overlay_lock:
-                                self.current_bbox = None
+                                # self.current_bbox = None
 
                                 # reshape landmarks
                                 lm = raw_data.reshape(-1, 2)  # (468, 2)

@@ -139,9 +139,17 @@ facemesh_invoke (const GstTensorFilterProperties * prop, void **private_data,
 {
   facemesh_pdata *pdata = (facemesh_pdata *) (*private_data);
 
-  float *in_ptr = (float *)input[0].data;
+  float *in_ptr = (float *)input[0].data; // Tensor 0: FaceMesh output is [468 * 3]
+  float *score_ptr = (float *)input[1].data; // Tensor 1: Score (1 value)
   float *out_ptr = (float *)output[0].data;
-  // float score = ((float *)input[1].data)[0];
+
+  float score = score_ptr[0];
+  float threshold = 0.5f;
+
+  if (score < threshold) {
+      memset(out_ptr, 0, sizeof(float) * OUTPUT_DIM); 
+      return 0; 
+  }
 
   float width_img = pdata->width_img;
   float height_img = pdata->height_img;
@@ -151,8 +159,11 @@ facemesh_invoke (const GstTensorFilterProperties * prop, void **private_data,
       float y = in_ptr[i * 3 + 1];
       // float z = in_ptr[i * 3 + 2];
 
-      out_ptr[i * 2 + 0] = x * width_img;
-      out_ptr[i * 2 + 1] = y * height_img;
+      // out_ptr[i * 2 + 0] = x * width_img;
+      // out_ptr[i * 2 + 1] = y * height_img;
+
+      out_ptr[i * 2 + 0] = x;
+      out_ptr[i * 2 + 1] = y;
   }
 
   return 0;
