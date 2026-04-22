@@ -230,16 +230,37 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     float xmax = CLAMP(cx + w / 2.0f);
     float ymax = CLAMP(cy + h / 2.0f);
 
-    uint32_t x = (uint32_t)(xmin * pdata->width_img);
-    uint32_t y = (uint32_t)(ymin * pdata->height_img);
-    uint32_t w_box = (uint32_t)((xmax - xmin) * pdata->width_img);
-    uint32_t h_box = (uint32_t)((ymax - ymin) * pdata->height_img);
+    // uint32_t x = (uint32_t)(xmin * pdata->width_img);
+    // uint32_t y = (uint32_t)(ymin * pdata->height_img);
+    // uint32_t w_box = (uint32_t)((xmax - xmin) * pdata->width_img);
+    // uint32_t h_box = (uint32_t)((ymax - ymin) * pdata->height_img);
 
     // out_ptr[0] = x;
     // out_ptr[1] = y;
     // out_ptr[2] = w_box;
     // out_ptr[3] = h_box;
 
+    // out_ptr[0] = xmin * pdata->width_img;
+    // out_ptr[1] = ymin * pdata->height_img;
+    // out_ptr[2] = (xmax - xmin) * pdata->width_img;
+    // out_ptr[3] = (ymax - ymin) * pdata->height_img;
+
+    // Make bbox square and wider
+    float box_w = xmax - xmin;
+    float box_h = ymax - ymin;
+    float cx_box = (xmin + xmax) * 0.5f;
+    float cy_box = (ymin + ymax) * 0.5f;
+
+    /* Test the coefficient 1.25 ~ 1.5 */
+    float side = fmaxf(box_w, box_h) * 1.35f;
+
+    /* The box shape turns into a square and expands it*/
+    xmin = CLAMP(cx_box - side * 0.5f);
+    xmax = CLAMP(cx_box + side * 0.5f);
+    ymin = CLAMP(cy_box - side * 0.5f);
+    ymax = CLAMP(cy_box + side * 0.5f);
+
+    /* output float32 pixel */
     out_ptr[0] = xmin * pdata->width_img;
     out_ptr[1] = ymin * pdata->height_img;
     out_ptr[2] = (xmax - xmin) * pdata->width_img;
