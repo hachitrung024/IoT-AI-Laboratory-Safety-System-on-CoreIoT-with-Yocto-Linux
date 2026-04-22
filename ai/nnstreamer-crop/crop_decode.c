@@ -196,7 +196,7 @@ gst_crop_decode_transform_caps (GstBaseTransform * trans,
     v = gst_structure_get_value (s, "framerate");
     if (v) {
       gst_caps_set_value (result, "framerate", v);
-      g_print ("[DEBUG] [crop_decode] Propagated framerate to next element\n");
+      // g_print ("[DEBUG] [crop_decode] Propagated framerate to next element\n");
     }
   }
 

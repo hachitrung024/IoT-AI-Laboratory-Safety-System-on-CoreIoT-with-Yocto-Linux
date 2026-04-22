@@ -52,12 +52,17 @@ class ImageAnalyticsEngine:
         self.use_model = use_model
         self.debug_mode = debug_mode
 
+        self.num_landmarks = 468
+        self.landmarks_dim = 2  # (x, y) we not using z for 3D
+        self.output_landmarks_dim = self.num_landmarks * self.landmarks_dim
+
         self.pipeline = None
         self.appsink = None
+        self.cropsink = None
         self.overlay = None
+        
         self.infer_start = None
         self.infer_end = None
-        self.cropsink = None
 
         self._infer_timestamps = {}
 
@@ -375,7 +380,8 @@ class ImageAnalyticsEngine:
             try:
                 res_array = np.frombuffer(map_info.data, dtype=np.float32).copy()
                 
-                if len(res_array) == 936:
+                log.info("Inference result len of res_array: %s", len(res_array))
+                if len(res_array) == self.output_landmarks_dim:
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
@@ -455,7 +461,7 @@ class ImageAnalyticsEngine:
 
         with self.draw_overlay_lock:
             # draw landmarks
-            if self.current_landmarks:
+            if self.current_landmarks is not None:
                 context.set_source_rgb(1, 0, 0)
                 for kx, ky in self.current_landmarks:
                     context.arc(kx, ky, 3, 0, 2 * 3.1416)
