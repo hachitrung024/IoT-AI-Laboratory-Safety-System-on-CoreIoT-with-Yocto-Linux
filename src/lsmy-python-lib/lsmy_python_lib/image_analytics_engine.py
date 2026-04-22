@@ -108,7 +108,7 @@ class ImageAnalyticsEngine:
             self.pipeline = Gst.parse_launch(pipeline_str)
             self.appsink = self.pipeline.get_by_name("appsink")
             # self.cropsink = self.pipeline.get_by_name("cropsink")
-            # self.overlay = self.pipeline.get_by_name("overlay")
+            self.overlay = self.pipeline.get_by_name("overlay")
 
             self.infer_start = self.pipeline.get_by_name("infer_start")
             self.infer_end = self.pipeline.get_by_name("infer_end")
@@ -119,8 +119,7 @@ class ImageAnalyticsEngine:
                 # raise RuntimeError("cropsink element not found in pipeline")
                 pass
             if self.overlay is None and self.debug_mode:
-                # raise RuntimeError("overlay element not found in pipeline")
-                pass
+                raise RuntimeError("overlay element not found in pipeline")
             if self.infer_start is None and self.use_model:
                 raise RuntimeError("infer_start element not found in pipeline")
             if self.infer_end is None and self.use_model:
@@ -144,8 +143,7 @@ class ImageAnalyticsEngine:
                 self.infer_start.connect("handoff", self.on_infer_start)
                 self.infer_end.connect("handoff", self.on_infer_end)
             if self.debug_mode:
-                # self.overlay.connect("draw", self.on_draw_overlay)
-                pass
+                self.overlay.connect("draw", self.on_draw_overlay)
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
@@ -259,15 +257,8 @@ class ImageAnalyticsEngine:
                     # f"tensor_sink name=cropsink"
                     f"queue ! "
                     f"crop_decode ! "
-                    # f"tensor_filter framework=crop_decode model=dummy1 custom=192,192,3 ! "
 
                     # Face landmark detection
-                    # f"tensor_decoder mode=direct_video ! "
-                    # f"videoconvert ! "
-                    # f"videoscale ! video/x-raw,width=192,height=192 ! "
-                    # f"videoconvert ! video/x-raw,format=RGB ! "
-                    # f"tensor_converter ! "
-                    # f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection
@@ -278,10 +269,10 @@ class ImageAnalyticsEngine:
                 )
 
                 # 3. Debug display
-                # pipeline += (
-                #     f"t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! cairooverlay name=overlay ! "
-                #     f"autovideosink sync=false "
-                # )
+                pipeline += (
+                    f"t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! cairooverlay name=overlay ! "
+                    f"autovideosink sync=false "
+                )
             else:
                 # No debug
                 pipeline += (
@@ -313,14 +304,9 @@ class ImageAnalyticsEngine:
                     # f"tensor_debug name=debug_crop ! "
                     # f"tensor_sink name=cropsink"
                     f"queue ! "
+                    f"crop_decode ! "
 
                     # Face landmark detection
-                    f"tensor_decoder mode=direct_video ! "
-                    f"videoconvert ! "
-                    f"videoscale ! video/x-raw,width=192,height=192 ! "
-                    # f"videoconvert ! video/x-raw,format=RGB ! "
-                    f"tensor_converter ! "
-                    f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
                     f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection

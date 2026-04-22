@@ -73,7 +73,7 @@ gst_crop_decode_transform (GstBaseTransform * trans,
   gsize outsize;
   guint8 *dst;
 
-  g_print ("[DEBUG] [crop_decode] --- New Transform Call ---\n");
+  // g_print ("[DEBUG] [crop_decode] --- New Transform Call ---\n");
 
   guint n_mem = gst_buffer_n_memory (inbuf);
   if (n_mem < 1 || n_mem > 2) {
@@ -81,7 +81,7 @@ gst_crop_decode_transform (GstBaseTransform * trans,
       return GST_FLOW_ERROR;
   }
 
-  g_print ("[DEBUG] Buffer has %u memory blocks\n", n_mem);
+  // g_print ("[DEBUG] Buffer has %u memory blocks\n", n_mem);
 
   // Header memory block
   inmem = gst_buffer_peek_memory (inbuf, 0);
@@ -90,18 +90,18 @@ gst_crop_decode_transform (GstBaseTransform * trans,
     return GST_FLOW_ERROR;
   }
 
-  for (guint i = 0; i < n_mem; i++) {
-      GstMemory *tmp_mem = gst_buffer_peek_memory(inbuf, i);
-      g_print ("[DEBUG] Block %u: size %" G_GSIZE_FORMAT "\n", i, gst_memory_get_sizes(tmp_mem, NULL, NULL));
-  }
+  // for (guint i = 0; i < n_mem; i++) {
+  //     GstMemory *tmp_mem = gst_buffer_peek_memory(inbuf, i);
+  //     g_print ("[DEBUG] Block %u: size %" G_GSIZE_FORMAT "\n", i, gst_memory_get_sizes(tmp_mem, NULL, NULL));
+  // }
 
-  g_print ("[DEBUG] [crop_decode] Inmap size: %" G_GSIZE_FORMAT "\n", inmap.size);
+  // g_print ("[DEBUG] [crop_decode] Inmap size: %" G_GSIZE_FORMAT "\n", inmap.size);
 
-  g_print ("[DEBUG] Header signature: ");
-  for (int i = 0; i < 8; i++) {
-      g_print ("%02x ", ((guint8 *)inmap.data)[i]);
-  }
-  g_print ("\n");
+  // g_print ("[DEBUG] Header signature: ");
+  // for (int i = 0; i < 8; i++) {
+  //     g_print ("%02x ", ((guint8 *)inmap.data)[i]);
+  // }
+  // g_print ("\n");
 
   gst_tensor_meta_info_init (&meta);
   gst_tensor_info_init (&info);
@@ -155,8 +155,8 @@ gst_crop_decode_transform (GstBaseTransform * trans,
   gst_buffer_append_memory (outbuf, omem);
 
   guint final_mem_count = gst_buffer_n_memory (outbuf);
-  g_print ("[DEBUG] [crop_decode] Sending to next: %u blocks, size %" G_GSIZE_FORMAT "\n", 
-           final_mem_count, gst_buffer_get_size(outbuf));
+  // g_print ("[DEBUG] [crop_decode] Sending to next: %u blocks, size %" G_GSIZE_FORMAT "\n", 
+  //          final_mem_count, gst_buffer_get_size(outbuf));
 
   if (final_mem_count != 1) {
       g_printerr ("[crop_decode] ERROR: Something added extra memory! Count: %u\n", final_mem_count);
