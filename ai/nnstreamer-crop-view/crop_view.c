@@ -27,29 +27,9 @@ typedef struct _GstCropViewClass
 
 G_DEFINE_TYPE (GstCropView, gst_crop_view, GST_TYPE_BASE_TRANSFORM);
 
-static GstCaps *
-make_sink_caps (void)
-{
-  return gst_caps_from_string (
-      "other/tensors, "
-      "format=(string)static, "
-      "num_tensors=(int)1, "
-      "types=(string)float32, "
-      "dimensions=(string)3:192:192:1, "
-      "framerate=(fraction)[0/1, 2147483647/1]");
-}
-
-static GstCaps *
-make_src_caps (void)
-{
-  return gst_caps_from_string (
-      "video/x-raw, "
-      "format=(string)RGB, "
-      "width=(int)192, "
-      "pixel-aspect-ratio=(fraction)1/1, "
-      "framerate=(fraction)[0/1, 2147483647/1]");
-}
-
+/* ========================= */
+/* Helper */
+/* ========================= */
 static inline guint8
 clamp_u8_from_float (gfloat v)
 {
@@ -60,15 +40,53 @@ clamp_u8_from_float (gfloat v)
   return (guint8) (v * 255.0f + 0.5f);
 }
 
-/* Input:  float32 CHW = [3][192][192]
- * Output: uint8  HWC  = [192][192][3]
+static GstCaps *
+make_sink_caps (void)
+{
+  GstCaps *caps = gst_caps_new_simple ("other/tensors",
+      "format", G_TYPE_STRING, "static",
+      "num_tensors", G_TYPE_INT, 1,
+      "types", G_TYPE_STRING, "float32",
+      "dimensions", G_TYPE_STRING, "3:192:192:1",
+      NULL);
+
+  gst_caps_set_simple (caps,
+      "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1,
+      NULL);
+
+  return caps;
+}
+
+static GstCaps *
+make_src_caps (void)
+{
+  GstCaps *caps = gst_caps_new_simple ("video/x-raw",
+      "format", G_TYPE_STRING, "RGB",
+      "width", G_TYPE_INT, 192,
+      "height", G_TYPE_INT, 192,
+      "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1,
+      NULL);
+
+  gst_caps_set_simple (caps,
+      "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1,
+      NULL);
+
+  return caps;
+}
+
+/* ========================= */
+/* Transform */
+/* ========================= */
+/* Input : float32 HWC = [192][192][3]
+ * Output: uint8   RGB = [192][192][3]
  */
 static GstFlowReturn
 gst_crop_view_transform (GstBaseTransform * trans,
                          GstBuffer * inbuf,
                          GstBuffer * outbuf)
 {
-  GstMapInfo inmap, outmap;
+  GstMapInfo inmap;
+  GstMapInfo outmap;
 
   (void) trans;
 
@@ -98,18 +116,13 @@ gst_crop_view_transform (GstBaseTransform * trans,
   const gfloat *src = (const gfloat *) inmap.data;
   guint8 *dst = (guint8 *) outmap.data;
 
-  /* CHW -> HWC */
   for (guint y = 0; y < OUT_H; y++) {
     for (guint x = 0; x < OUT_W; x++) {
-      guint src_idx_r = 0 * (OUT_W * OUT_H) + y * OUT_W + x;
-      guint src_idx_g = 1 * (OUT_W * OUT_H) + y * OUT_W + x;
-      guint src_idx_b = 2 * (OUT_W * OUT_H) + y * OUT_W + x;
+      guint idx = (y * OUT_W + x) * OUT_C;
 
-      guint dst_idx = (y * OUT_W + x) * OUT_C;
-
-      dst[dst_idx + 0] = clamp_u8_from_float (src[src_idx_r]);
-      dst[dst_idx + 1] = clamp_u8_from_float (src[src_idx_g]);
-      dst[dst_idx + 2] = clamp_u8_from_float (src[src_idx_b]);
+      dst[idx + 0] = clamp_u8_from_float (src[idx + 0]);
+      dst[idx + 1] = clamp_u8_from_float (src[idx + 1]);
+      dst[idx + 2] = clamp_u8_from_float (src[idx + 2]);
     }
   }
 
@@ -121,27 +134,27 @@ gst_crop_view_transform (GstBaseTransform * trans,
   return GST_FLOW_OK;
 }
 
+/* ========================= */
+/* Transform caps */
+/* ========================= */
 static GstCaps *
 gst_crop_view_transform_caps (GstBaseTransform * trans,
                               GstPadDirection direction,
                               GstCaps * caps,
                               GstCaps * filter)
 {
-  GstCaps *result = NULL;
-  GstCaps *sink_caps = make_sink_caps ();
-  GstCaps *src_caps = make_src_caps ();
-
+  GstCaps *result;
   GstStructure *s;
   const GValue *v;
 
   (void) trans;
 
   if (direction == GST_PAD_SINK) {
-    /* sink -> src */
-    result = gst_caps_ref (src_caps);
+    /* tensor -> video */
+    result = gst_caps_copy (make_src_caps ());
   } else {
-    /* src -> sink */
-    result = gst_caps_ref (sink_caps);
+    /* video -> tensor */
+    result = gst_caps_copy (make_sink_caps ());
   }
 
   if (caps && gst_caps_get_size (caps) > 0) {
@@ -149,7 +162,6 @@ gst_crop_view_transform_caps (GstBaseTransform * trans,
     v = gst_structure_get_value (s, "framerate");
     if (v) {
       gst_caps_set_value (result, "framerate", v);
-      // g_print ("[DEBUG] [crop_decode] Propagated framerate to next element\n");
     }
   }
 
@@ -160,11 +172,12 @@ gst_crop_view_transform_caps (GstBaseTransform * trans,
     result = intersection;
   }
 
-  gst_caps_unref (sink_caps);
-  gst_caps_unref (src_caps);
   return result;
 }
 
+/* ========================= */
+/* Transform size */
+/* ========================= */
 static gboolean
 gst_crop_view_transform_size (GstBaseTransform * trans,
                               GstPadDirection direction,
@@ -176,19 +189,20 @@ gst_crop_view_transform_size (GstBaseTransform * trans,
   (void) trans;
   (void) caps;
   (void) othercaps;
+  (void) size;
 
   if (direction == GST_PAD_SINK) {
-    /* input tensor -> output RGB bytes */
     *othersize = OUT_W * OUT_H * OUT_C;
-  } else {
-    /* reverse negotiation */
-    *othersize = OUT_W * OUT_H * OUT_C * sizeof (gfloat);
+    return TRUE;
   }
 
-  (void) size;
+  *othersize = OUT_W * OUT_H * OUT_C * sizeof (gfloat);
   return TRUE;
 }
 
+/* ========================= */
+/* Class init */
+/* ========================= */
 static void
 gst_crop_view_class_init (GstCropViewClass * klass)
 {
@@ -206,16 +220,16 @@ gst_crop_view_class_init (GstCropViewClass * klass)
   gst_element_class_add_pad_template (element_class, sink_tmpl);
   gst_element_class_add_pad_template (element_class, src_tmpl);
 
-  gst_object_unref (sink_tmpl);
-  gst_object_unref (src_tmpl);
-  gst_caps_unref (sink_caps);
-  gst_caps_unref (src_caps);
+  // gst_object_unref (sink_tmpl);
+  // gst_object_unref (src_tmpl);
+  // gst_caps_unref (sink_caps);
+  // gst_caps_unref (src_caps);
 
   gst_element_class_set_static_metadata (
       element_class,
       "Crop View",
       "Filter/Video",
-      "Convert crop tensor to RGB video for display",
+      "Convert crop_decode output to RGB video for display",
       "you");
 
   base->transform = gst_crop_view_transform;
@@ -225,12 +239,18 @@ gst_crop_view_class_init (GstCropViewClass * klass)
   base->transform_ip_on_passthrough = FALSE;
 }
 
+/* ========================= */
+/* Init */
+/* ========================= */
 static void
 gst_crop_view_init (GstCropView * self)
 {
   (void) self;
 }
 
+/* ========================= */
+/* Plugin */
+/* ========================= */
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
