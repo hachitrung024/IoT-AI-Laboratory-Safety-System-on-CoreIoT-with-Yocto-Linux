@@ -252,7 +252,7 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     float cy_box = (ymin + ymax) * 0.5f;
 
     /* Test the coefficient 1.25 ~ 1.5 */
-    float side = fmaxf(box_w, box_h) * 1.35f;
+    float side = fmaxf(box_w, box_h) * 1.45f;
 
     /* The box shape turns into a square and expands it*/
     xmin = CLAMP(cx_box - side * 0.5f);
