@@ -230,6 +230,7 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     float xmax = CLAMP(cx + w / 2.0f);
     float ymax = CLAMP(cy + h / 2.0f);
 
+    // ---- Use uint32_t instead of float ----
     // uint32_t x = (uint32_t)(xmin * pdata->width_img);
     // uint32_t y = (uint32_t)(ymin * pdata->height_img);
     // uint32_t w_box = (uint32_t)((xmax - xmin) * pdata->width_img);
@@ -239,11 +240,6 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     // out_ptr[1] = y;
     // out_ptr[2] = w_box;
     // out_ptr[3] = h_box;
-
-    // out_ptr[0] = xmin * pdata->width_img;
-    // out_ptr[1] = ymin * pdata->height_img;
-    // out_ptr[2] = (xmax - xmin) * pdata->width_img;
-    // out_ptr[3] = (ymax - ymin) * pdata->height_img;
 
     // Make bbox square and wider
     float box_w = xmax - xmin;

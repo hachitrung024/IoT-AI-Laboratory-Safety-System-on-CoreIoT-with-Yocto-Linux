@@ -267,10 +267,14 @@ class ImageAnalyticsEngine:
                 # Merge tensor crop pipeline
                 pipeline += (
                     f"crop. ! "
+
+                    # --- Debug crop ---
                     # f"tensor_debug name=debug_crop ! "
                     # f"tensor_sink name=cropsink"
                     f"queue ! "
                     f"crop_decode ! "
+
+                    # --- Debug crop view ---
                     # f"crop_view ! videoconvert ! autovideosink sync=false"
 
                     # Face landmark detection
@@ -316,8 +320,6 @@ class ImageAnalyticsEngine:
                     f"crop.info "
 
                     f"crop. ! "
-                    # f"tensor_debug name=debug_crop ! "
-                    # f"tensor_sink name=cropsink"
                     f"queue ! "
                     f"crop_decode ! "
 

@@ -159,9 +159,11 @@ facemesh_invoke (const GstTensorFilterProperties * prop, void **private_data,
       float y = in_ptr[i * 3 + 1];
       // float z = in_ptr[i * 3 + 2];
 
+      // --- Return pixel coordinate ---
       // out_ptr[i * 2 + 0] = x * width_img;
       // out_ptr[i * 2 + 1] = y * height_img;
 
+      // --- Return normalized coordinate ---
       out_ptr[i * 2 + 0] = x;
       out_ptr[i * 2 + 1] = y;
   }
