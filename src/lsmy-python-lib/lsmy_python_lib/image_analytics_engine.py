@@ -29,6 +29,13 @@ Gst.init(None)
 os.environ["XDG_RUNTIME_DIR"] = "/run/user/0"
 os.environ["WAYLAND_DISPLAY"] = "wayland-0"
 
+# Fatigue states
+F_STATE_NORMAL = 0
+F_STATE_WARNING = 1
+F_STATE_TIRED = 2
+F_STATE_DISTRACTED = 3
+F_STATE_NO_FACE = 4
+
 class ImageAnalyticsEngine:
     """
     ImageAnalyticsEngine is a class that handles the camera and AI logic.
@@ -55,11 +62,13 @@ class ImageAnalyticsEngine:
         self.num_landmarks = 468
         self.landmarks_dim = 2  # (x, y) we not using z for 3D
         self.output_landmarks_dim = self.num_landmarks * self.landmarks_dim
+        self.output_fatigue_dim = 14
 
         self.pipeline = None
         self.appsink = None
         self.cropsink = None
         self.bboxsink = None
+        self.landmarksink = None
 
         self.overlay = None
         
@@ -77,6 +86,7 @@ class ImageAnalyticsEngine:
         self.metrics_lock = threading.Lock()
         self.critical_lock = threading.Lock()
         self.draw_overlay_lock = threading.Lock()
+        self.fatigue_lock = threading.Lock()
 
         self.pipeline_fps = fps
         self.result_count = 0
@@ -91,6 +101,9 @@ class ImageAnalyticsEngine:
 
         self.current_bbox = None
         self.current_landmarks = None
+
+        self.current_fatigue_output = None
+        self.current_state = F_STATE_NO_FACE
 
         self.result_queue = Queue(maxsize=1)
 
@@ -116,6 +129,7 @@ class ImageAnalyticsEngine:
             self.appsink = self.pipeline.get_by_name("appsink")
             # self.cropsink = self.pipeline.get_by_name("cropsink")
             self.bboxsink = self.pipeline.get_by_name("bboxsink")
+            self.landmarksink = self.pipeline.get_by_name("landmarksink")
 
             self.overlay = self.pipeline.get_by_name("overlay")
 
@@ -128,6 +142,8 @@ class ImageAnalyticsEngine:
             #     raise RuntimeError("cropsink element not found in pipeline")
             if self.bboxsink is None and self.debug_mode:
                 raise RuntimeError("bboxsink element not found in pipeline")
+            if self.landmarksink is None and self.debug_mode:
+                raise RuntimeError("landmarksink element not found in pipeline")
             if self.overlay is None and self.debug_mode:
                 raise RuntimeError("overlay element not found in pipeline")
             if self.infer_start is None and self.use_model:
@@ -148,6 +164,7 @@ class ImageAnalyticsEngine:
             self.appsink.connect("new-sample", self.on_new_sample)
             # self.cropsink.connect("new-data", self.on_new_crop_debug)
             self.bboxsink.connect("new-data", self.on_new_bbox)
+            self.landmarksink.connect("new-data", self.on_new_landmarks)
 
             # Connect signal: AI inference
             if self.use_model:
@@ -282,7 +299,11 @@ class ImageAnalyticsEngine:
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
-                    # f"tensor_filter framework=ear_eval model=dummy3 ! "
+                    f"tee name=tf "
+                    f"tf. ! queue ! tensor_sink name=landmarksink "
+
+                    f"tf. ! queue ! "
+                    f"tensor_filter framework=fatigue_eval model=dummy3 ! "
 
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
                 )
@@ -398,7 +419,7 @@ class ImageAnalyticsEngine:
 
                 # log.info("First 10 values: %s", res_array[:10])
                 
-                if len(res_array) == self.output_landmarks_dim and np.any(res_array):
+                if len(res_array) == self.output_fatigue_dim and np.any(res_array):
                     ai_results = {"people": True, "fatigue": None, "raw": res_array}
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
@@ -472,22 +493,6 @@ class ImageAnalyticsEngine:
 
         try:
             # log.info("BBox buffer size (bytes): %d", map_info.size)
-
-            # data_u32 = np.frombuffer(map_info.data, dtype=np.uint32).copy()
-            # data_f32 = np.frombuffer(map_info.data, dtype=np.float32).copy()
-
-            # log.info("BBox raw u32: %s", data_u32[:8])
-            # log.info("BBox raw f32: %s", data_f32[:8])
-
-            # raw = bytes(map_info.data)
-
-            # header = raw[:128]
-            # payload = raw[128:]
-
-            # log.info("[BBOX] payload bytes: %d", len(payload))
-            # log.info("[BBOX] payload as f32: %s", np.frombuffer(payload, dtype=np.float32))
-            # log.info("[BBOX] payload as u32: %s", np.frombuffer(payload, dtype=np.uint32))
-
             raw = map_info.data
 
             header_size = 128
@@ -495,13 +500,8 @@ class ImageAnalyticsEngine:
 
             bbox = np.frombuffer(payload, dtype=np.float32)
 
-            # Debug
-            # log.info("BBox raw: %s", data[:8])
-
             if len(bbox) == 4:
                 x, y, w, h = bbox
-
-                # log.info("[BBOX REAL] x=%.2f y=%.2f w=%.2f h=%.2f", x, y, w, h)
 
                 with self.draw_overlay_lock:
                     self.current_bbox = (x, y, w, h)
@@ -511,27 +511,42 @@ class ImageAnalyticsEngine:
         finally:
             buffer.unmap(map_info)
 
+    def on_new_landmarks(self, sink, buffer):
+        # log.info("Got landmarks tensor buffer")
+
+        success, map_info = buffer.map(Gst.MapFlags.READ)
+        if not success:
+            return
+
+        try:
+            # log.info("Landmarks buffer size (bytes): %d", map_info.size)
+            raw = map_info.data
+
+            header_size = 0
+            num_values = self.output_landmarks_dim
+
+            payload_size = num_values * 4  # float32
+            payload = raw[header_size:header_size + payload_size]
+            landmarks = np.frombuffer(payload, dtype=np.float32)
+
+            if landmarks.size == num_values:
+                lm = landmarks.reshape(self.num_landmarks, self.landmarks_dim)
+
+                with self.draw_overlay_lock:
+                    self.current_landmarks = lm.copy()
+
+            else:
+                log.warning(
+                    "Unexpected landmark size: got %d, expected %d",
+                    landmarks.size, num_values
+                )
+
+        except Exception as e:
+            log.error("Error parsing landmarks: %s", e)
+        finally:
+            buffer.unmap(map_info)
+
     def on_draw_overlay(self, overlay, context, timestamp, duration):
-        # with self.draw_overlay_lock:
-        #     if self.current_bbox is None:
-        #         return
-
-        #     x, y, w, h = self.current_bbox
-
-        # draw bounding box
-        # context.set_source_rgb(0, 1, 0)
-        # context.set_line_width(3)
-        # context.rectangle(x, y, w, h)
-        # context.stroke()
-
-        # with self.draw_overlay_lock:
-        #     # draw landmarks
-        #     if self.current_landmarks is not None:
-        #         context.set_source_rgb(1, 0, 0)
-        #         for kx, ky in self.current_landmarks:
-        #             context.arc(kx, ky, 3, 0, 2 * 3.1416)
-        #             context.fill()
-
         with self.draw_overlay_lock:
             if self.current_landmarks is not None and self.current_bbox is not None and np.any(self.current_landmarks) and np.any(self.current_bbox):
                 bx, by, bw, bh = self.current_bbox
@@ -549,23 +564,85 @@ class ImageAnalyticsEngine:
                     context.arc(x, y, 3, 0, 2 * 3.1416)
                     context.fill()
 
+        with self.fatigue_lock:
+            data = self.current_fatigue_output.copy() if self.current_fatigue_output else None
+
         # draw info panel
         context.set_source_rgba(0, 0, 0, 0.5)
-        context.rectangle(5, 5, 250, 75)
+        context.rectangle(5, 5, 360, 290)
         context.fill()
 
         context.set_source_rgb(1, 1, 1)
         context.select_font_face("monospace", 0, 0)
         context.set_font_size(14)
 
-        context.move_to(15, 25)
+        position_x = 15
+        position_y = 25
+        context.move_to(position_x, position_y)
         context.show_text(f"FPS: {self.pipeline_fps}")
+        position_y += 20
 
-        context.move_to(15, 45)
+        context.move_to(position_x, position_y)
         context.show_text(f"AI Latency: {self.avg_inference_time:.2f} ms")
+        position_y += 20
 
-        context.move_to(15, 65)
+        context.move_to(position_x, position_y)
         context.show_text(f"Pipeline Latency: {self.avg_pipeline_latency:.2f} ms")
+        position_y += 20
+
+        # ===== Fatigue Output =====
+        if data is not None:
+            state_names = {
+                0: "NORMAL",
+                1: "WARNING",
+                2: "TIRED",
+                3: "DISTRACTED",
+                4: "NO_FACE",
+            }
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"State: {state_names.get(data['state'], 'UNK')}")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Fatigue: {data['fatigue_score']:.2f}")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Distraction: {data['distraction_score']:.2f}")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"EAR L/R: {data['left_ear']:.3f} / {data['right_ear']:.3f}")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Blink Rate: {data['blink_rate_per_min']:.1f}/min")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Eye Closed: {data['closed_duration_ms']:.0f} ms")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"MAR: {data['mar']:.3f}")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Yawn: {data['yawn_hold_ms']:.0f} ms")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Head Roll: {data['head_roll_deg']:.1f}")
+            position_y += 20
+
+            context.move_to(position_x, position_y)
+            context.show_text(f"Yaw/Pitch: {data['head_yaw_proxy']:.3f} / {data['head_pitch_proxy']:.3f}")
+            position_y += 20
+
+        else:
+            context.move_to(position_x, position_y)
+            context.show_text("Fatigue: No data")
     
     # Measure pipeline FPS
     def measure_pipeline_metrics(self, inference_time=0, pipeline_latency=0):
@@ -682,25 +759,35 @@ class ImageAnalyticsEngine:
                 if now - self.overlay_update_time > 0.1:
                     self.overlay_update_time = now
                     if is_people and raw_data is not None:
-                        # Debug display
-                        if self.debug_mode and self.overlay:
-                            with self.draw_overlay_lock:
-                                # self.current_bbox = None
-
-                                # reshape landmarks
-                                lm = raw_data.reshape(-1, 2)  # (468, 2)
-                                self.current_landmarks = lm
-                        else:
-                            # log.info("--- [AI DATA] ---")
+                        # log.info("--- [AI DATA] ---")
                             # log.info(f"Number of data: {len(raw_data)}")
                             # log.info(f"First 5 data: {raw_data[:5]}")
                             # log.info("-" * 30)
-                            pass
-                    else:
-                        with self.draw_overlay_lock:
-                            self.current_bbox = None
-                            self.current_landmarks = None
 
+                        fatigue_data = {
+                            "state": int(raw_data[0]),
+                            "fatigue_score": float(raw_data[1]),
+                            "distraction_score": float(raw_data[2]),
+                            "left_ear": float(raw_data[3]),
+                            "right_ear": float(raw_data[4]),
+                            "blink_rate_per_min": float(raw_data[5]),
+                            "closed_duration_ms": float(raw_data[6]),
+                            "mar": float(raw_data[7]),
+                            "yawn_hold_ms": float(raw_data[8]),
+                            "head_roll_deg": float(raw_data[9]),
+                            "head_yaw_proxy": float(raw_data[10]),
+                            "head_pitch_proxy": float(raw_data[11]),
+                            "gaze_x_proxy": float(raw_data[12]),
+                            "gaze_y_proxy": float(raw_data[13]),
+                        }
+                        
+                        with self.fatigue_lock:
+                            self.current_fatigue_output = fatigue_data
+                            self.current_state = fatigue_data["state"]
+                    else:
+                        with self.fatigue_lock:
+                            self.current_fatigue_output = None
+                            self.current_state = F_STATE_NO_FACE
     def _monitor_loop(self):
         while not self._stop_event.is_set():
             is_critical = self.evaluate_pipeline_status()
