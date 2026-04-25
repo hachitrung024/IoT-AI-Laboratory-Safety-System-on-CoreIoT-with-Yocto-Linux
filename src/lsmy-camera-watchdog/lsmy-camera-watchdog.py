@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import os
 import sys
-import time
+import subprocess
 import logging
 from logging.handlers import RotatingFileHandler
 import asyncio
@@ -10,7 +10,7 @@ import asyncio
 from lsmy_python_lib.ipc import send_update_camera_status_signal_ipc
 
 # ===== CONFIG =====
-CAMERA_DEVICE = "/dev/camera0"
+CAMERA_DEVICE = "/dev/video0"
 CHECK_INTERVAL = 20           
 MAX_INACTIVE_TIME = 20
 MAX_RECOVER_TRIES = 3
@@ -41,7 +41,9 @@ def get_unicam_interrupt_count():
     with open("/proc/interrupts", "r") as f:
         for line in f:
             if "unicam" in line:
-                return int(line.split()[1])
+                parts = line.split()
+                counts = [int(x) for x in parts[1:] if x.isdigit()]
+                return sum(counts)
     return None
 
 
@@ -51,6 +53,15 @@ def check_camera_health():
 
     if not os.path.exists(CAMERA_DEVICE):
         log.error("Camera device not found")
+        return False
+    
+    out = subprocess.check_output(
+            ["libcamera-hello", "--list-cameras"],
+            stderr=subprocess.STDOUT
+        ).decode()
+    
+    if not ("Available cameras" in out):
+        log.error("Camera availability not found")
         return False
 
     current = get_unicam_interrupt_count()
@@ -68,7 +79,7 @@ def check_camera_health():
     else:
         inactive_duration = 0
         last_interrupt_count = current
-        log.debug("Camera active")
+        log.info("Camera active")
 
     return inactive_duration < MAX_INACTIVE_TIME
 
