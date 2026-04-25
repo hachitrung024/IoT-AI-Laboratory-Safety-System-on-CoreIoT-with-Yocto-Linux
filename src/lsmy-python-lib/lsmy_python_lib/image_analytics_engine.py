@@ -162,9 +162,6 @@ class ImageAnalyticsEngine:
 
             # Connect signal: new-sample
             self.appsink.connect("new-sample", self.on_new_sample)
-            # self.cropsink.connect("new-data", self.on_new_crop_debug)
-            self.bboxsink.connect("new-data", self.on_new_bbox)
-            self.landmarksink.connect("new-data", self.on_new_landmarks)
 
             # Connect signal: AI inference
             if self.use_model:
@@ -172,6 +169,9 @@ class ImageAnalyticsEngine:
                 self.infer_end.connect("handoff", self.on_infer_end)
             if self.debug_mode:
                 self.overlay.connect("draw", self.on_draw_overlay)
+                # self.cropsink.connect("new-data", self.on_new_crop_debug)
+                self.bboxsink.connect("new-data", self.on_new_bbox)
+                self.landmarksink.connect("new-data", self.on_new_landmarks)
 
             # Start pipeline in a dedicated thread with GLib MainLoop
             self.running = True
@@ -349,7 +349,7 @@ class ImageAnalyticsEngine:
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
-                    # f"tensor_filter framework=ear_eval model=dummy2 ! "
+                    f"tensor_filter framework=fatigue_eval model=dummy3 ! "
 
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
                 )
