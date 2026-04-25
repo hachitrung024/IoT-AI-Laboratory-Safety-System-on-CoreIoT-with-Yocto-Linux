@@ -151,8 +151,8 @@ facemesh_invoke (const GstTensorFilterProperties * prop, void **private_data,
       return 0; 
   }
 
-  float width_img = pdata->width_img;
-  float height_img = pdata->height_img;
+  // float width_img = pdata->width_img;
+  // float height_img = pdata->height_img;
 
   for (int i = 0; i < NUM_LANDMARKS; i++) {
       float x = in_ptr[i * 3 + 0];

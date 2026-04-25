@@ -10,6 +10,8 @@
 // x, y, w, h per detection
 #define OUTPUT_DIM 4
 
+#define BBOX_SCALE 1.45f
+
 #define CLAMP(x) (fmaxf(0.0f, fminf(1.0f, x)))
 
 typedef struct {
@@ -248,7 +250,7 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     float cy_box = (ymin + ymax) * 0.5f;
 
     /* Test the coefficient 1.25 ~ 1.5 */
-    float side = fmaxf(box_w, box_h) * 1.45f;
+    float side = fmaxf(box_w, box_h) * BBOX_SCALE;
 
     /* The box shape turns into a square and expands it*/
     xmin = CLAMP(cx_box - side * 0.5f);

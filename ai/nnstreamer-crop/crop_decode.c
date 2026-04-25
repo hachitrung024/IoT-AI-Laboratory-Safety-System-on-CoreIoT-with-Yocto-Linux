@@ -54,6 +54,58 @@ resize_nn (const guint8 * src,
   }
 }
 
+static void
+resize_bilinear (const guint8 *src,
+                 guint sw, guint sh, guint sc,
+                 gfloat *dst)
+{
+  float x_ratio = (float)(sw - 1) / (float)(OUT_W - 1);
+  float y_ratio = (float)(sh - 1) / (float)(OUT_H - 1);
+
+  for (guint y = 0; y < OUT_H; y++) {
+
+    float sy = y * y_ratio;
+    int y0 = (int) sy;
+    int y1 = y0 + 1;
+    if (y1 >= sh) y1 = sh - 1;
+
+    float dy = sy - y0;
+
+    for (guint x = 0; x < OUT_W; x++) {
+
+      float sx = x * x_ratio;
+      int x0 = (int) sx;
+      int x1 = x0 + 1;
+      if (x1 >= sw) x1 = sw - 1;
+
+      float dx = sx - x0;
+
+      guint idx00 = (y0 * sw + x0) * sc;
+      guint idx10 = (y0 * sw + x1) * sc;
+      guint idx01 = (y1 * sw + x0) * sc;
+      guint idx11 = (y1 * sw + x1) * sc;
+
+      guint didx = (y * OUT_W + x) * OUT_C;
+
+      for (guint c = 0; c < OUT_C; c++) {
+
+        guint8 p00 = src[idx00 + (c < sc ? c : sc - 1)];
+        guint8 p10 = src[idx10 + (c < sc ? c : sc - 1)];
+        guint8 p01 = src[idx01 + (c < sc ? c : sc - 1)];
+        guint8 p11 = src[idx11 + (c < sc ? c : sc - 1)];
+
+        float value =
+            (1 - dx) * (1 - dy) * p00 +
+            dx * (1 - dy) * p10 +
+            (1 - dx) * dy * p01 +
+            dx * dy * p11;
+
+        dst[didx + c] = value / 255.0f;
+      }
+    }
+  }
+}
+
 /* ========================= */
 /* Transform */
 /* ========================= */
@@ -125,6 +177,11 @@ gst_crop_decode_transform (GstBaseTransform * trans,
   }
 
   hsize = gst_tensor_meta_info_get_header_size (&meta);
+  if (hsize >= inmap.size) {
+      g_printerr ("[crop_decode] invalid header size\n");
+      gst_memory_unmap (inmem, &inmap);
+      return GST_FLOW_ERROR;
+  }
 
   guint sc = info.dimension[0];
   guint sw = info.dimension[1];
@@ -143,7 +200,8 @@ gst_crop_decode_transform (GstBaseTransform * trans,
     return GST_FLOW_ERROR;
   }
 
-  resize_nn ((const guint8 *) inmap.data + hsize, sw, sh, sc, (gfloat *) dst);
+  // resize_nn ((const guint8 *) inmap.data + hsize, sw, sh, sc, (gfloat *) dst);
+  resize_bilinear ((const guint8 *) inmap.data + hsize, sw, sh, sc, (gfloat *) dst);
 
   gst_memory_unmap (inmem, &inmap);
 
