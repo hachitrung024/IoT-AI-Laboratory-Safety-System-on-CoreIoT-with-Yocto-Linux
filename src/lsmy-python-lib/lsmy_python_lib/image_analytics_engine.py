@@ -29,6 +29,9 @@ Gst.init(None)
 os.environ["XDG_RUNTIME_DIR"] = "/run/user/0"
 os.environ["WAYLAND_DISPLAY"] = "wayland-0"
 
+# Landmark input size model 192x192
+LANDMARK_INPUT_SIZE = 192
+
 # Fatigue states
 F_STATE_NORMAL = 0
 F_STATE_WARNING = 1
@@ -59,6 +62,8 @@ class ImageAnalyticsEngine:
         self.use_model = use_model
         self.debug_mode = debug_mode
 
+        self.output_crop_dim = self.width * self.height
+
         self.num_landmarks = 468
         self.landmarks_dim = 2  # (x, y) we not using z for 3D
         self.output_landmarks_dim = self.num_landmarks * self.landmarks_dim
@@ -78,9 +83,9 @@ class ImageAnalyticsEngine:
         self._infer_timestamps = {}
 
         self._gst_main_loop = GLib.MainLoop()
-        self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
-        self._main_thread = threading.Thread(target=self._main_loop, daemon=True)
-        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._gst_thread = None
+        self._main_thread = None
+        self._monitor_thread = None
         self._stop_event = threading.Event()
 
         self.metrics_lock = threading.Lock()
@@ -178,6 +183,10 @@ class ImageAnalyticsEngine:
             self.is_critical = False
             self._stop_event.clear()
 
+            self._gst_thread = threading.Thread(target=self._gst_loop, daemon=True)
+            self._main_thread = threading.Thread(target=self._main_loop, daemon=True)
+            self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+
             # Start GStreamer thread
             self._gst_thread.start()
             log.info("Image Analytics Engine GStreamer thread successfully started")
@@ -274,9 +283,9 @@ class ImageAnalyticsEngine:
                     f"tensor_filter framework=blaze_decode model=dummy "
                     f"custom={self.width},{self.height} ! "
                     f"tee name=td "
-                    f"td. ! queue ! tensor_sink name=bboxsink "
+                    f"td. ! queue max-size-buffers=2 leaky=downstream ! tensor_sink name=bboxsink "
 
-                    f"td. ! queue ! "
+                    f"td. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"crop.info "
                 )
@@ -288,7 +297,7 @@ class ImageAnalyticsEngine:
                     # --- Debug crop ---
                     # f"tensor_debug name=debug_crop ! "
                     # f"tensor_sink name=cropsink"
-                    f"queue ! "
+                    f"queue max-size-buffers=2 leaky=downstream ! "
                     f"crop_decode ! "
 
                     # --- Debug crop view ---
@@ -300,9 +309,9 @@ class ImageAnalyticsEngine:
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
                     f"tee name=tf "
-                    f"tf. ! queue ! tensor_sink name=landmarksink "
+                    f"tf. ! queue max-size-buffers=2 leaky=downstream ! tensor_sink name=landmarksink "
 
-                    f"tf. ! queue ! "
+                    f"tf. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"tensor_filter framework=fatigue_eval model=dummy3 ! "
 
                     f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "  
@@ -341,7 +350,7 @@ class ImageAnalyticsEngine:
                     f"crop.info "
 
                     f"crop. ! "
-                    f"queue ! "
+                    f"queue max-size-buffers=2 leaky=downstream ! "
                     f"crop_decode ! "
 
                     # Face landmark detection
@@ -363,11 +372,11 @@ class ImageAnalyticsEngine:
                 f"tee name=t "
 
                 # Branch 1: Raw frames
-                f"t. ! queue ! "
+                f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                 f"appsink name=appsink emit-signals=true max-buffers=1 drop=true "
 
                 # Branch 2: Debug display
-                f"t. ! queue ! "
+                f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                 f"autovideosink sync=false"
             )
         return pipeline
@@ -469,9 +478,9 @@ class ImageAnalyticsEngine:
             print("First 64 bytes (hex):", raw[:64].hex(" "))
 
             header_size = 128
-            payload = raw[header_size:header_size + (640 * 480 * 3)]
+            payload = raw[header_size:header_size + (self.output_crop_dim * 3)]
 
-            img = np.frombuffer(payload, dtype=np.uint8).reshape(480, 640, 3)
+            img = np.frombuffer(payload, dtype=np.uint8).reshape(self.height, self.width, 3)
 
             print("Image shape:", img.shape)
             print("Top-left pixel:", img[0, 0])
@@ -553,8 +562,8 @@ class ImageAnalyticsEngine:
                 context.set_source_rgb(1, 0, 0)
 
                 for lx, ly in self.current_landmarks:
-                    nx = float(lx) / 192.0
-                    ny = float(ly) / 192.0
+                    nx = float(lx) / LANDMARK_INPUT_SIZE
+                    ny = float(ly) / LANDMARK_INPUT_SIZE
 
                     x = bx + nx * bw
                     y = by + ny * bh
