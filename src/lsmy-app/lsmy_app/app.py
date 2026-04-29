@@ -152,7 +152,7 @@ class LsmyApplication:
         # Monitor Reset Button Process
         self.monitor_button_reset_process = multiprocessing.Process(target=self.reset_button_manager.monitor_button_reset, args=(self.wifi_manager,), daemon=True)
         # Camera Main Process
-        self.camera_main_process = multiprocessing.Process(target=self.camera_manager.camera_main_process, daemon=True)
+        self.camera_main_process = multiprocessing.Process(target=self.camera_manager.camera_main_process, daemon=False)
 
         self.print_wifi_info = False
         self.running = False

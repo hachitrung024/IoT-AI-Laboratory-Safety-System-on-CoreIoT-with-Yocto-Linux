@@ -11,6 +11,7 @@ log = logging.getLogger("camera-manager")
 
 FPS = 15
 MAX_RECOVER_TRIES = 3
+RUN_PIPELINE_MANUALLY = False
 
 class CameraManager:
     """
@@ -27,6 +28,7 @@ class CameraManager:
 
         self.start_engine = True
         self.engine_process = None
+        self._stop_engine_event = multiprocessing.Event()
 
         update_camera_status(self.global_store,"INACTIVE")
 
@@ -44,32 +46,8 @@ class CameraManager:
         log.info("========== STOPPING CAMERA MAIN PROCESS ==========")
         update_camera_status(self.global_store,"STOPPED")
         self._stop_event.set()
+        self._stop_engine_event.set()
         self._ready_event.clear()
-
-    def run_engine(stop_event):
-        engine = ImageAnalyticsEngine(width=640, height=480, fps=FPS,
-                               model_blaze_path=MODEL_BLAZE_FACE_DETECTION, model_landmark_path=MODEL_LANDMARK_FACE_DETECTION,
-                               use_model=True, debug_mode=True)
-
-        try:
-            engine.start()
-
-            while not stop_event.is_set():
-                with engine.critical_lock:
-                    if engine.is_critical:
-                        log.info("Critical status detected, stopping engine...")
-                        engine.stop()
-                        break
-                stop_event.wait(5)
-        except KeyboardInterrupt:
-            log.info("Interrupted by keyboard")
-        except Exception as e:
-            log.exception("Unexpected error occurred: %s", e)
-        finally:
-            if engine.running:
-                engine.stop()
-            else:
-                log.info("Skipping stop as engine is not running")
 
     def camera_main_process(self):
         log.info("========== STARTING CAMERA MAIN PROCESS ==========")
@@ -84,36 +62,34 @@ class CameraManager:
                     camera_status = get_camera_status(self.global_store)
 
                     if(camera_status == "INACTIVE"):
-                        if self.start_engine:
+                        if self.start_engine or RUN_PIPELINE_MANUALLY:
                             update_camera_status(self.global_store,"RUNNING")
                         else:
                             self._stop_event.wait(5)
                     elif(camera_status == "RUNNING"):
                         # Start camera pipeline
                         try:
-                            if self.start_engine or get_camera_recovery(self.global_store):
+                            if self.start_engine or get_camera_recovery(self.global_store) or RUN_PIPELINE_MANUALLY:
                                 self.engine_process = multiprocessing.Process(
-                                    target=self.run_engine,
-                                    args=(self._stop_event,)
+                                    target=run_engine,
+                                    args=(self._stop_engine_event,)
                                 )
                                 self.start_engine = False
+                                RUN_PIPELINE_MANUALLY = False
+                                update_camera_recovery(self.global_store,False)
                                 self.engine_process.start()
-                                time.sleep(2)
-                                if not self.engine_process.is_alive():
-                                    log.error(f"Process exited early with code {self.engine_process.exitcode}")
-                                else:
-                                    if get_retries_count(self.global_store) != 0:
-                                        update_retries_count(self.global_store, 0)
                         except Exception as e:
                             log.exception("Unexpected error occurred: %s", e)
                         self._stop_event.wait(5)
                     elif(camera_status == "STOPPED"):
                         self._stop_event.set()
+                        self._stop_engine_event.set()
                         continue
                     elif(camera_status == "RESTARTING"):
                         retries_count = get_retries_count(self.global_store)
                         if retries_count < self._max_recover_retries:
                             self._stop_event.set()
+                            # self._stop_engine_event.set()
                             retries_count = retries_count + 1
                             update_retries_count(self.global_store,retries_count)
                             self.start_engine = True
@@ -121,12 +97,15 @@ class CameraManager:
                             update_camera_status(self.global_store,"INACTIVE")
                             self.start_engine = False
                             self._stop_event.set()
+                            # self._stop_engine_event.set()
+                            update_retries_count(self.global_store,0)
                         time.sleep(5)
                     else:
                         log.info(f"Camera status unknown: {camera_status}")
                         update_camera_status(self.global_store,"INACTIVE")
                         self._stop_event.set()
-                        self._stop_event.wait(5)
+                        # self._stop_engine_event.set()
+                        time.sleep(5)
 
                 except Exception as e:
                     log.error(f"Camera main process encountered an error: {e}")
@@ -152,8 +131,34 @@ class CameraManager:
                 if camera_status == "RESTARTING":
                     update_camera_status(self.global_store,"RUNNING")
                 self._stop_event.clear()
-
+                self._stop_engine_event.clear()
         log.info("Camera stopped running process!!!")
+
+# Run engine process
+def run_engine(stop_event):
+    engine = ImageAnalyticsEngine(width=640, height=480, fps=FPS,
+                            model_blaze_path=MODEL_BLAZE_FACE_DETECTION, model_landmark_path=MODEL_LANDMARK_FACE_DETECTION,
+                            use_model=True, debug_mode=False)
+
+    try:
+        engine.start()
+
+        while not stop_event.is_set():
+            with engine.critical_lock:
+                if engine.is_critical:
+                    log.info("Critical status detected, stopping engine...")
+                    engine.stop()
+                    break
+            stop_event.wait(5)
+    except KeyboardInterrupt:
+        log.info("Interrupted by keyboard")
+    except Exception as e:
+        log.exception("Unexpected error occurred: %s", e)
+    finally:
+        if engine.running:
+            engine.stop()
+        else:
+            log.info("Skipping stop as engine is not running")
 
 # Update camera_status
 def update_camera_status(global_store: GlobalStore, value: str):

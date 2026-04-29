@@ -77,7 +77,7 @@ async def handle_client(reader, writer):
 
             if status == "RESTARTING":
                 retries_count = get_retries_count(GLOBAL_STORE)
-                if retries_count < MAX_RECOVER_TRIES:
+                if retries_count <= MAX_RECOVER_TRIES:
                     update_camera_status(GLOBAL_STORE, status)
 
                 data = {
