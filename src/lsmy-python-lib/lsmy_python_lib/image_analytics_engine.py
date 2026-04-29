@@ -29,6 +29,12 @@ Gst.init(None)
 os.environ["XDG_RUNTIME_DIR"] = "/run/user/0"
 os.environ["WAYLAND_DISPLAY"] = "wayland-0"
 
+# Model blaze face detection path
+MODEL_BLAZE_FACE_DETECTION = "/usr/share/models/blaze_face_short_range.tflite"
+
+# Model landmark path
+MODEL_LANDMARK_FACE_DETECTION = "/usr/share/models/face_landmark.tflite"
+
 # Landmark input size model 192x192
 LANDMARK_INPUT_SIZE = 192
 
@@ -46,7 +52,7 @@ class ImageAnalyticsEngine:
     It also handles the AI inference logic and the callback function.
     """
 
-    def __init__(self, width=640, height=480, fps=15, model_path="/path/to/model.tflite",
+    def __init__(self, width=640, height=480, fps=15, model_blaze_path="/path/to/model.tflite", model_landmark_path="/path/to/landmark_model.tflite",
                 use_model=True, debug_mode=False):
         """
         :param model_path: model (.tflite) or other model file depending on plugin
@@ -58,7 +64,8 @@ class ImageAnalyticsEngine:
         self.width = width
         self.height = height
         self.fps = fps
-        self.model_path = model_path
+        self.model_blaze_path = model_blaze_path
+        self.model_landmark_path = model_landmark_path
         self.use_model = use_model
         self.debug_mode = debug_mode
 
@@ -277,7 +284,7 @@ class ImageAnalyticsEngine:
 
                     # Blaze face detection model
                     f"tensor_filter framework=tensorflow2-lite "
-                    f"model={self.model_path} custom=delegate:xnnpack ! "
+                    f"model={self.model_blaze_path} custom=delegate:xnnpack ! "
 
                     # Blaze decode plugin
                     f"tensor_filter framework=blaze_decode model=dummy "
@@ -304,7 +311,7 @@ class ImageAnalyticsEngine:
                     # f"crop_view ! videoconvert ! autovideosink sync=false"
 
                     # Face landmark detection
-                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_landmark_path} custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
@@ -342,7 +349,7 @@ class ImageAnalyticsEngine:
                     f"identity name=infer_start signal-handoffs=true ! "
                     # Blaze face detection model
                     f"tensor_filter framework=tensorflow2-lite "
-                    f"model={self.model_path} custom=delegate:xnnpack ! "
+                    f"model={self.model_blaze_path} custom=delegate:xnnpack ! "
                     # Blaze decode plugin
                     f"tensor_filter framework=blaze_decode model=dummy "
                     f"custom={self.width},{self.height} ! "
@@ -354,7 +361,7 @@ class ImageAnalyticsEngine:
                     f"crop_decode ! "
 
                     # Face landmark detection
-                    f"tensor_filter framework=tensorflow2-lite model=/usr/share/models/face_landmark.tflite custom=delegate:xnnpack ! "
+                    f"tensor_filter framework=tensorflow2-lite model={self.model_landmark_path} custom=delegate:xnnpack ! "
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
@@ -824,10 +831,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    model_path = "/usr/share/models/blaze_face_short_range.tflite"
+    model_blaze_path = MODEL_BLAZE_FACE_DETECTION
+    model_landmark_path = MODEL_LANDMARK_FACE_DETECTION
 
     engine = ImageAnalyticsEngine(width=640, height=480, fps=args.fps,
-                               model_path=model_path,
+                               model_blaze_path=model_blaze_path, model_landmark_path=model_landmark_path,
                                use_model=True, debug_mode=args.debug)
     try:
         engine.start()

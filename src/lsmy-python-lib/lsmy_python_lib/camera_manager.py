@@ -5,8 +5,11 @@ import multiprocessing
 # ====== GLOBAL STORE LIBRARY ======
 from lsmy_python_lib.global_store import GlobalStore
 
+from lsmy_python_lib.image_analytics_engine import ImageAnalyticsEngine, MODEL_BLAZE_FACE_DETECTION, MODEL_LANDMARK_FACE_DETECTION
+
 log = logging.getLogger("camera-manager")
 
+FPS = 15
 MAX_RECOVER_TRIES = 3
 
 class CameraManager:
@@ -46,6 +49,10 @@ class CameraManager:
         self._ready_event.set()
 
         camera_status = ""
+
+        engine = ImageAnalyticsEngine(width=640, height=480, fps=FPS,
+                               model_blaze_path=MODEL_BLAZE_FACE_DETECTION, model_landmark_path=MODEL_LANDMARK_FACE_DETECTION,
+                               use_model=True, debug_mode=True)
         while True:
             while not self._stop_event.is_set():
                 try:
@@ -53,11 +60,24 @@ class CameraManager:
 
                     if(camera_status == "INACTIVE"):
                         self._stop_event.wait(5)
-                        # TODO: start pipeline, clean actions
                     elif(camera_status == "RUNNING"):
-                        update_retries_count(self.global_store,0)
+                        if get_retries_count(self.global_store) != 0:
+                            update_retries_count(self.global_store,0)
+        
+                        # Start camera pipeline
+                        try:
+                            engine.start()
+                            
+                            with engine.critical_lock:
+                                if engine.is_critical:
+                                    log.info("Critical status detected, stopping engine...")
+                                    engine.stop()
+                                    break
+                        except KeyboardInterrupt:
+                            log.info("Interrupted by keyboard")
+                        except Exception as e:
+                            log.exception("Unexpected error occurred: %s", e)
                         self._stop_event.wait(5)
-                        # TODO: start streaming
                     elif(camera_status == "STOPPED"):
                         self._stop_event.set()
                         continue
@@ -83,10 +103,10 @@ class CameraManager:
 
             # Clean actions
             try:
-                # TODO: stop streaming
-                # TODO: release buffers
-                # TODO: close device
-                pass
+                if engine.running:
+                    engine.stop()
+                else:
+                    log.info("Skipping stop as engine is not running")
             except Exception as e:
                 log.error(f"Error while stopping camera pipeline: {e}")
             
