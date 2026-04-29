@@ -7,7 +7,7 @@ import multiprocessing
 
 from lsmy_python_lib.global_store import GlobalStore
 
-from lsmy_python_lib.camera_manager import get_retries_count
+from lsmy_python_lib.camera_manager import get_retries_count, update_camera_recovery
 
 from lsmy_python_lib.wifi_config_manager import update_wifi_connect_signal
 from lsmy_python_lib.camera_manager import update_camera_status, MAX_RECOVER_TRIES
@@ -86,6 +86,9 @@ async def handle_client(reader, writer):
                 resp = {"status": "ok", "data": data}
             else:
                 update_camera_status(GLOBAL_STORE, status)
+
+                if status == "RUNNING":
+                    update_camera_recovery(GLOBAL_STORE, True)
 
                 log.info("Update camera status received: status=%s", status)
 

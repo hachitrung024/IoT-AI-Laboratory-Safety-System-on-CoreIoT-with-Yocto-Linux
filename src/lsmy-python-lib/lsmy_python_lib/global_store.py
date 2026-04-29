@@ -10,6 +10,7 @@ log = logging.getLogger("global-store")
 # "is_sta_mode": bool - Whether the device is in Station mode
 # "is_have_wifi_connect_signal": bool - Whether is have request to connect WiFi
 # "camera_status": str - Whether the camera is running properly ("INACTIVE", "RUNNING", "RESTARTING" ,"STOPPED", etc.)
+# "camera_recovery": bool - Whether the camera is in recovery mode
 # "retries_count": int - Retry count value for restart camera pipeline
 
 class GlobalStore:
@@ -47,6 +48,7 @@ def create_global_store():
         "is_sta_mode": True,
         "is_have_wifi_connect_signal": False,
         "camera_status": "INACTIVE",
+        "camera_recovery": False,
         "retries_count": 0
     })
     

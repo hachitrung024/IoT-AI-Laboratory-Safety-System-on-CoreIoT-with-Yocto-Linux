@@ -15,11 +15,6 @@ import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-
 log = logging.getLogger("image-analytics-engine")
 
 # Initialize GStreamer Library
@@ -814,6 +809,11 @@ class ImageAnalyticsEngine:
             self._stop_event.wait(5)
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
     parser = argparse.ArgumentParser(description="Image Analytics Engine")
 
     parser.add_argument(
