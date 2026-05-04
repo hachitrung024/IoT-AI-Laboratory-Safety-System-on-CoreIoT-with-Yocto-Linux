@@ -197,7 +197,6 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
 
     float *boxes = (float *) input[0].data;
     float *scores = (float *) input[1].data;
-    // uint32_t *out_ptr = (uint32_t *) output[0].data;
     float *out_ptr = (float *) output[0].data;
 
     int best_idx = -1;
@@ -232,37 +231,40 @@ static int blaze_invoke (const GstTensorFilterProperties * prop,
     float xmax = CLAMP(cx + w / 2.0f);
     float ymax = CLAMP(cy + h / 2.0f);
 
-    // ---- Use uint32_t instead of float ----
-    // uint32_t x = (uint32_t)(xmin * pdata->width_img);
-    // uint32_t y = (uint32_t)(ymin * pdata->height_img);
-    // uint32_t w_box = (uint32_t)((xmax - xmin) * pdata->width_img);
-    // uint32_t h_box = (uint32_t)((ymax - ymin) * pdata->height_img);
+    // ===== Convert to pixel =====
+    float x1 = xmin * pdata->width_img;
+    float y1 = ymin * pdata->height_img;
+    float x2 = xmax * pdata->width_img;
+    float y2 = ymax * pdata->height_img;
 
-    // out_ptr[0] = x;
-    // out_ptr[1] = y;
-    // out_ptr[2] = w_box;
-    // out_ptr[3] = h_box;
+    // center
+    float cx_box = (x1 + x2) * 0.5f;
+    float cy_box = (y1 + y2) * 0.5f;
+
+    // width/height pixel
+    float box_w = x2 - x1;
+    float box_h = y2 - y1;
 
     // Make bbox square and wider
-    float box_w = xmax - xmin;
-    float box_h = ymax - ymin;
-    float cx_box = (xmin + xmax) * 0.5f;
-    float cy_box = (ymin + ymax) * 0.5f;
-
-    /* Test the coefficient 1.25 ~ 1.5 */
     float side = fmaxf(box_w, box_h) * BBOX_SCALE;
 
-    /* The box shape turns into a square and expands it*/
-    xmin = CLAMP(cx_box - side * 0.5f);
-    xmax = CLAMP(cx_box + side * 0.5f);
-    ymin = CLAMP(cy_box - side * 0.5f);
-    ymax = CLAMP(cy_box + side * 0.5f);
+    float half = side * 0.5f;
 
-    /* output float32 pixel */
-    out_ptr[0] = xmin * pdata->width_img;
-    out_ptr[1] = ymin * pdata->height_img;
-    out_ptr[2] = (xmax - xmin) * pdata->width_img;
-    out_ptr[3] = (ymax - ymin) * pdata->height_img;
+    float new_x1 = cx_box - half;
+    float new_y1 = cy_box - half;
+    float new_x2 = cx_box + half;
+    float new_y2 = cy_box + half;
+
+    if (new_x1 < 0) new_x1 = 0;
+    if (new_y1 < 0) new_y1 = 0;
+    if (new_x2 > pdata->width_img)  new_x2 = pdata->width_img;
+    if (new_y2 > pdata->height_img) new_y2 = pdata->height_img;
+
+    // ===== output =====
+    out_ptr[0] = new_x1;
+    out_ptr[1] = new_y1;
+    out_ptr[2] = new_x2 - new_x1;
+    out_ptr[3] = new_y2 - new_y1;
 
     return 0;
 }
