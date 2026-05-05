@@ -22,24 +22,24 @@ logger = logging.getLogger("GstPersonDetector")
 
 class GstPersonDetector:
 	"""
-	GStreamer-based real-time person detection system using SSD MobileNet V3 TFLite.
-	
+	GStreamer-based real-time person detection system using SSD MobileNet V3 (TFLite).
+
 	Features:
-	- Captures video from camera using libcamera
-	- Runs inference on scaled frames at configurable FPS
-	- Outputs detected persons with real-time bounding boxes
-	- Applies NMS and duplicate merging for robust detections
-	- Smooths detection count over a temporal window
-	- Optional live preview via configurable sink (kmssink, waylandsink, ...)
-	
-	Inference Pipeline:
+	- Capture video from camera via libcamera (through GStreamer pipeline)
+	- Run inference on resized frames at a configurable FPS
+	- Detect persons and draw real-time bounding boxes
+	- Apply post-processing (NMS, duplicate merging) for stable detections
+	- Smooth detection count over a temporal window to reduce noise
+	- Optional live preview via configurable video sink (kmssink, waylandsink, ...)
+
+	Pipeline:
 	1. Capture frames from camera
-	2. Scale to model input size (320x320)
-	3. Convert to RGB format
+	2. Resize to model input size (320x320)
+	3. Convert to RGB
 	4. Run TFLite inference with XNNPACK delegate
-	5. Post-process detections (NMS, filtering, merging)
-	6. Smooth person count over configurable window
-	7. Overlay results on display output
+	5. Post-process detections (filter, NMS, merge)
+	6. Smooth person count over time
+	7. Overlay results and display output
 	"""
 
 	def __init__(
