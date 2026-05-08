@@ -97,7 +97,7 @@ class ImageAnalyticsEngine:
 
         self.pipeline_fps = fps
         self.result_count = 0
-        self.last_time = time.time()
+        self.last_time = time.perf_counter()
 
         self.avg_inference_time = 0.0
         self.avg_pipeline_latency = 0.0
@@ -275,7 +275,7 @@ class ImageAnalyticsEngine:
                     f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"identity name=infer_start signal-handoffs=true ! "
+                    # f"identity name=infer_start signal-handoffs=true ! "
 
                     # Blaze face detection model
                     f"tensor_filter framework=tensorflow2-lite "
@@ -288,7 +288,7 @@ class ImageAnalyticsEngine:
                     f"td. ! queue max-size-buffers=2 leaky=downstream ! tensor_sink name=bboxsink "
 
                     f"td. ! queue max-size-buffers=2 leaky=downstream ! "
-                    f"identity name=infer_end signal-handoffs=true ! "
+                    # f"identity name=infer_end signal-handoffs=true ! "
                     f"crop.info "
                 )
 
@@ -306,7 +306,9 @@ class ImageAnalyticsEngine:
                     # f"crop_view ! videoconvert ! autovideosink sync=false"
 
                     # Face landmark detection
+                    f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_landmark_path} custom=delegate:xnnpack ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
@@ -404,6 +406,7 @@ class ImageAnalyticsEngine:
         Called in GStreamer thread context when appsink has a new sample.
         Convert sample -> numpy array and extract metadata.
         """
+        now = time.perf_counter()
         # log.info("Received new sample from appsink")
         sample = appsink.emit("pull-sample")
         if sample is None:
@@ -435,7 +438,7 @@ class ImageAnalyticsEngine:
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
                 
-                self.measure_pipeline_metrics(self.inference_time, pipeline_latency)
+                self.measure_pipeline_metrics(now, self.inference_time, pipeline_latency)
 
                 if ai_results["people"]:
                     if self.result_queue.full():
@@ -656,14 +659,15 @@ class ImageAnalyticsEngine:
             context.show_text("Fatigue: No data")
     
     # Measure pipeline FPS
-    def measure_pipeline_metrics(self, inference_time=0, pipeline_latency=0):
+    def measure_pipeline_metrics(self, now=0, inference_time=0, pipeline_latency=0):
         # Pipeline FPS
         self.result_count += 1
-        if time.time() - self.last_time > 1:
+        elapsed = time.perf_counter() - self.last_time
+        if elapsed >= 1.0:
             with self.metrics_lock:
-                self.pipeline_fps = self.result_count
+                self.pipeline_fps = (self.result_count - 1) / elapsed
             self.result_count = 0
-            self.last_time = time.time()
+            self.last_time = time.perf_counter()
 
         with self.metrics_lock:
             # Inference time
@@ -738,9 +742,9 @@ class ImageAnalyticsEngine:
 
         # Print status
         log.info(f"--- PIPELINE STATUS ---")
-        log.info(f"CPU: {cpu_usage}% | Temp: {temp}°C | RAM: {ram.percent}%")
+        log.info(f"CPU: {cpu_usage}% | Temp: {temp}°C | RAM: {ram.percent:.2f}%")
         with self.metrics_lock:
-            log.info(f"Camera FPS: {self.fps} | Pipeline FPS: {self.pipeline_fps}")
+            log.info(f"Camera FPS: {self.fps} | Pipeline FPS: {self.pipeline_fps:.2f}")
             log.info(f"AI Latency: {self.avg_inference_time:.2f}ms | Pipeline Latency: {self.avg_pipeline_latency:.2f}ms")
         if is_critical:
             log.error(f"CRITICAL STATUS: {' | '.join(status_msg)}")
