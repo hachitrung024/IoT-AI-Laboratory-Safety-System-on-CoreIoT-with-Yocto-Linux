@@ -4,6 +4,7 @@ import logging
 import signal
 import struct
 import sys
+import time
 
 import gi
 import cairo
@@ -76,6 +77,7 @@ class GstPersonDetector:
 		self.overlay_boxes: list[tuple[float, float, float, float]] = []
 		self.last_person_count = -1
 		self.count_history: deque[int] = deque(maxlen=self.smooth_window)
+		self._infer_start_ts: dict[int, float] = {}
 
 		Gst.init(None)
 		self._build_pipeline()
@@ -100,8 +102,10 @@ class GstPersonDetector:
 			f"videoscale ! video/x-raw,width={self.model_size},height={self.model_size} ! "
 			f"videoconvert ! video/x-raw,format=RGB ! "
 			f"tensor_converter ! "
+			f"identity name=infer_start signal-handoffs=true ! "
 			f"tensor_filter framework=tensorflow-lite model={self.model_path} "
 			f"custom=Delegate:XNNPACK,NumThreads:{self.ai_threads} ! "
+			f"identity name=infer_end signal-handoffs=true ! "
 			f"tensor_sink name=det_sink"
 		)
 
@@ -142,6 +146,14 @@ class GstPersonDetector:
 			sys.exit(1)
 		det_sink.connect("new-data", self._on_new_data)
 
+		infer_start = self.pipeline.get_by_name("infer_start")
+		infer_end = self.pipeline.get_by_name("infer_end")
+		if not infer_start or not infer_end:
+			logger.error("identity 'infer_start'/'infer_end' not found")
+			sys.exit(1)
+		infer_start.connect("handoff", self._on_infer_start)
+		infer_end.connect("handoff", self._on_infer_end)
+
 		if self.display_sink != "none":
 			overlay = self.pipeline.get_by_name("person_overlay")
 			if not overlay:
@@ -166,6 +178,22 @@ class GstPersonDetector:
 		elif msg_type == Gst.MessageType.EOS:
 			logger.info("EOS received.")
 			self.shutdown()
+
+	def _on_infer_start(self, _elem: Gst.Element, buffer: Gst.Buffer) -> None:
+		pts = buffer.pts
+		if pts == Gst.CLOCK_TIME_NONE:
+			return
+		self._infer_start_ts[pts] = time.perf_counter()
+
+	def _on_infer_end(self, _elem: Gst.Element, buffer: Gst.Buffer) -> None:
+		pts = buffer.pts
+		if pts == Gst.CLOCK_TIME_NONE:
+			return
+		t0 = self._infer_start_ts.pop(pts, None)
+		if t0 is None:
+			return
+		dt_ms = (time.perf_counter() - t0) * 1000.0
+		logger.info("inference: %.2f ms", dt_ms)
 
 	def _on_new_data(self, _sink: Gst.Element, buffer: Gst.Buffer) -> None:
 		self.sample_count += 1
