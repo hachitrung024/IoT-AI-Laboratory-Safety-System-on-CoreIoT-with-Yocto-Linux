@@ -92,21 +92,35 @@ people_count_getInputDim (const GstTensorFilterProperties * prop,
       pdata->height_img = 480.0f;
   }
 
-  info->num_tensors = 2;
+  info->num_tensors = 4;
 
-  // Tensor 0: FaceMesh output is [468 * 3]
+  /* detection_boxes */
   info->info[0].type = _NNS_FLOAT32;
-  info->info[0].dimension[0] = NUM_LANDMARKS * LANDMARK_DIM;
-  info->info[0].dimension[1] = 1;
+  info->info[0].dimension[0] = 4;
+  info->info[0].dimension[1] = MAX_DETECTION;
   info->info[0].dimension[2] = 1;
   info->info[0].dimension[3] = 1;
 
-  // Tensor 1: Score (1 value) - [1, 1, 1, 1]
+  /* detection_classes */
   info->info[1].type = _NNS_FLOAT32;
-  info->info[1].dimension[0] = 1;
+  info->info[1].dimension[0] = MAX_DETECTION;
   info->info[1].dimension[1] = 1;
   info->info[1].dimension[2] = 1;
   info->info[1].dimension[3] = 1;
+
+  /* detection_scores */
+  info->info[2].type = _NNS_FLOAT32;
+  info->info[2].dimension[0] = MAX_DETECTION;
+  info->info[2].dimension[1] = 1;
+  info->info[2].dimension[2] = 1;
+  info->info[2].dimension[3] = 1;
+
+  /* num_detections */
+  info->info[3].type = _NNS_FLOAT32;
+  info->info[3].dimension[0] = 1;
+  info->info[3].dimension[1] = 1;
+  info->info[3].dimension[2] = 1;
+  info->info[3].dimension[3] = 1;
 
   return 0;
 }

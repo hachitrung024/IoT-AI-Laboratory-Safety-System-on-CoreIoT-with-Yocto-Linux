@@ -25,7 +25,7 @@ os.environ["XDG_RUNTIME_DIR"] = "/run/user/0"
 os.environ["WAYLAND_DISPLAY"] = "wayland-0"
 
 # Model person count path
-MODEL_LANDMARK_FACE_DETECTION = "/usr/share/models/model.tflite"
+MODEL_PEOPLE_COUNT_DETECTION = "/usr/share/models/model.tflite"
 
 # Model blaze face detection path
 MODEL_BLAZE_FACE_DETECTION = "/usr/share/models/blaze_face_short_range.tflite"
@@ -62,6 +62,7 @@ class ImageAnalyticsEngine:
         self.width = width
         self.height = height
         self.fps = fps
+        self.model_people_count_path = MODEL_PEOPLE_COUNT_DETECTION
         self.model_blaze_path = model_blaze_path
         self.model_landmark_path = model_landmark_path
         self.use_model = use_model
@@ -326,7 +327,7 @@ class ImageAnalyticsEngine:
 
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow-lite "
-                    f"model=/usr/share/models/model.tflite "
+                    f"model={self.model_people_count_path} "
                     f"custom=Delegate:XNNPACK ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"tensor_filter framework=people_count_decode model=dummy1 custom={self.width},{self.height} ! "
@@ -419,7 +420,7 @@ class ImageAnalyticsEngine:
 
                     f"identity name=infer_start signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow-lite "
-                    f"model=/usr/share/models/model.tflite "
+                    f"model={self.model_people_count_path} "
                     f"custom=Delegate:XNNPACK ! "
                     f"identity name=infer_end signal-handoffs=true ! "
                     f"tensor_filter framework=people_count_decode model=dummy1 custom={self.width},{self.height} ! "
