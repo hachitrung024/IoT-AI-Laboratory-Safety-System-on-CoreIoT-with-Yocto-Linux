@@ -4,6 +4,9 @@
 #include <glib.h>
 #include <nnstreamer_plugin_api_filter.h>
 
+#define NUM_LANDMARKS 468
+#define LANDMARK_DIM 3
+#define OUTPUT_DIM (NUM_LANDMARKS * 2)
 #define MAX_DETECTION 10
 
 typedef struct {
