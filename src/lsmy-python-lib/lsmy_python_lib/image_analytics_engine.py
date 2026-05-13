@@ -24,6 +24,9 @@ Gst.init(None)
 os.environ["XDG_RUNTIME_DIR"] = "/run/user/0"
 os.environ["WAYLAND_DISPLAY"] = "wayland-0"
 
+# Model person count path
+MODEL_LANDMARK_FACE_DETECTION = "/usr/share/models/model.tflite"
+
 # Model blaze face detection path
 MODEL_BLAZE_FACE_DETECTION = "/usr/share/models/blaze_face_short_range.tflite"
 
@@ -74,6 +77,7 @@ class ImageAnalyticsEngine:
         self.pipeline = None
         self.appsink = None
         self.cropsink = None
+        self.personsink = None
         self.bboxsink = None
         self.landmarksink = None
 
@@ -82,7 +86,11 @@ class ImageAnalyticsEngine:
         self.infer_start = None
         self.infer_end = None
 
+        self.infer_start1 = None
+        self.infer_end1 = None
+
         self._infer_timestamps = {}
+        self._infer_timestamps1 = {}
 
         self._gst_main_loop = GLib.MainLoop()
         self._gst_thread = None
@@ -100,9 +108,28 @@ class ImageAnalyticsEngine:
         self.last_time = time.perf_counter()
 
         self.avg_inference_time = 0.0
+        self.avg_inference_time1 = 0.0
         self.avg_pipeline_latency = 0.0
         self.inference_time = 0.0
+        self.inference_time1 = 0.0
         self.pipeline_latency = 0.0
+
+        # FPS window counters
+        self.person_in_frames = 0
+        self.person_out_frames = 0
+
+        # Total counters
+        self.person_total_in = 0
+        self.person_total_out = 0
+
+        self.person_in_last = time.perf_counter()
+        self.person_out_last = time.perf_counter()
+
+        self.person_in_fps = 0
+        self.person_out_fps = 0
+
+        self.person_drop_frames = 0
+        self.person_drop_rate = 0.0
 
         self.overlay_update_time = 0
 
@@ -135,6 +162,7 @@ class ImageAnalyticsEngine:
             self.pipeline = Gst.parse_launch(pipeline_str)
             self.appsink = self.pipeline.get_by_name("appsink")
             # self.cropsink = self.pipeline.get_by_name("cropsink")
+            self.personsink = self.pipeline.get_by_name("personsink")
             self.bboxsink = self.pipeline.get_by_name("bboxsink")
             self.landmarksink = self.pipeline.get_by_name("landmarksink")
 
@@ -143,8 +171,13 @@ class ImageAnalyticsEngine:
             self.infer_start = self.pipeline.get_by_name("infer_start")
             self.infer_end = self.pipeline.get_by_name("infer_end")
 
+            self.infer_start1 = self.pipeline.get_by_name("infer_start1")
+            self.infer_end1 = self.pipeline.get_by_name("infer_end1")
+
             if self.appsink is None:
                 raise RuntimeError("appsink element not found in pipeline")
+            if self.personsink is None:
+                raise RuntimeError("personsink element not found in pipeline")
             # if self.cropsink is None and self.debug_mode:
             #     raise RuntimeError("cropsink element not found in pipeline")
             if self.bboxsink is None and self.debug_mode:
@@ -157,6 +190,10 @@ class ImageAnalyticsEngine:
                 raise RuntimeError("infer_start element not found in pipeline")
             if self.infer_end is None and self.use_model:
                 raise RuntimeError("infer_end element not found in pipeline")
+            if self.infer_start1 is None and self.use_model:
+                raise RuntimeError("infer_start1 element not found in pipeline")
+            if self.infer_end1 is None and self.use_model:
+                raise RuntimeError("infer_end1 element not found in pipeline")
             
             bus = self.pipeline.get_bus()
             bus.add_signal_watch()
@@ -174,9 +211,15 @@ class ImageAnalyticsEngine:
             if self.use_model:
                 self.infer_start.connect("handoff", self.on_infer_start)
                 self.infer_end.connect("handoff", self.on_infer_end)
+                self.infer_start.connect("handoff", self.on_person_infer_start)
+                self.infer_end.connect("handoff", self.on_person_infer_end)
+
+                self.infer_start1.connect("handoff", self.on_infer_start1)
+                self.infer_end1.connect("handoff", self.on_infer_end1)
             if self.debug_mode:
                 self.overlay.connect("draw", self.on_draw_overlay)
                 # self.cropsink.connect("new-data", self.on_new_crop_debug)
+                self.personsink.connect("new-data", self.on_new_person_count)
                 self.bboxsink.connect("new-data", self.on_new_bbox)
                 self.landmarksink.connect("new-data", self.on_new_landmarks)
 
@@ -248,6 +291,10 @@ class ImageAnalyticsEngine:
         if self.use_model:
             pipeline = (
                 f"libcamerasrc ! "
+                # f"video/x-raw,width=1296,height=972,framerate={self.fps}/1 ! "
+                # f"videoscale ! "
+                # f"video/x-raw,width={self.width},height={self.height} ! "
+
                 f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
                 f"tee name=t "
             )
@@ -258,6 +305,32 @@ class ImageAnalyticsEngine:
                 # 2. Face detection result
                 pipeline += (
                     f"tensor_crop name=crop silent=false "
+                )
+
+                # 0. Counting People
+                # Person detection branch
+                pipeline += (
+                    f"t. ! "
+                    f"queue max-size-buffers=2 leaky=downstream ! "
+
+                    # f"videorate ! "
+                    # f"video/x-raw,framerate=10/1 ! "
+
+                    f"videoscale ! "
+                    f"video/x-raw,width=320,height=320 ! "
+
+                    f"videoconvert ! "
+                    f"video/x-raw,format=RGB ! "
+
+                    f"tensor_converter ! "
+
+                    f"identity name=infer_start signal-handoffs=true ! "
+                    f"tensor_filter framework=tensorflow-lite "
+                    f"model=/usr/share/models/model.tflite "
+                    f"custom=Delegate:XNNPACK ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
+                    f"tensor_filter framework=people_count_decode model=dummy1 custom={self.width},{self.height} ! "
+                    f"tensor_sink name=personsink "
                 )
 
                 # 1. Raw frame
@@ -275,7 +348,6 @@ class ImageAnalyticsEngine:
                     f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    # f"identity name=infer_start signal-handoffs=true ! "
 
                     # Blaze face detection model
                     f"tensor_filter framework=tensorflow2-lite "
@@ -288,7 +360,6 @@ class ImageAnalyticsEngine:
                     f"td. ! queue max-size-buffers=2 leaky=downstream ! tensor_sink name=bboxsink "
 
                     f"td. ! queue max-size-buffers=2 leaky=downstream ! "
-                    # f"identity name=infer_end signal-handoffs=true ! "
                     f"crop.info "
                 )
 
@@ -306,9 +377,9 @@ class ImageAnalyticsEngine:
                     # f"crop_view ! videoconvert ! autovideosink sync=false"
 
                     # Face landmark detection
-                    f"identity name=infer_start signal-handoffs=true ! "
+                    f"identity name=infer_start1 signal-handoffs=true ! "
                     f"tensor_filter framework=tensorflow2-lite model={self.model_landmark_path} custom=delegate:xnnpack ! "
-                    f"identity name=infer_end signal-handoffs=true ! "
+                    f"identity name=infer_end1 signal-handoffs=true ! "
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
@@ -331,6 +402,29 @@ class ImageAnalyticsEngine:
                 pipeline += (
                     f"tensor_crop name=crop silent=false "
 
+                    # Person detection branch
+                    f"t. ! "
+                    f"queue max-size-buffers=2 leaky=downstream ! "
+
+                    # f"videorate ! "
+                    # f"video/x-raw,framerate=15/1 ! "
+
+                    f"videoscale ! "
+                    f"video/x-raw,width=320,height=320 ! "
+
+                    f"videoconvert ! "
+                    f"video/x-raw,format=RGB ! "
+
+                    f"tensor_converter ! "
+
+                    f"identity name=infer_start signal-handoffs=true ! "
+                    f"tensor_filter framework=tensorflow-lite "
+                    f"model=/usr/share/models/model.tflite "
+                    f"custom=Delegate:XNNPACK ! "
+                    f"identity name=infer_end signal-handoffs=true ! "
+                    f"tensor_filter framework=people_count_decode model=dummy1 custom={self.width},{self.height} ! "
+                    f"tensor_sink name=personsink "
+
                     # Raw frame
                     f"t. ! queue max-size-buffers=2 leaky=downstream ! "
                     f"videoconvert ! video/x-raw,format=RGB ! "
@@ -343,22 +437,22 @@ class ImageAnalyticsEngine:
                     f"videoconvert ! video/x-raw,format=RGB ! "
                     f"tensor_converter ! "
                     f"tensor_transform mode=arithmetic option=typecast:float32,div:255.0 ! "
-                    f"identity name=infer_start signal-handoffs=true ! "
                     # Blaze face detection model
                     f"tensor_filter framework=tensorflow2-lite "
                     f"model={self.model_blaze_path} custom=delegate:xnnpack ! "
                     # Blaze decode plugin
                     f"tensor_filter framework=blaze_decode model=dummy "
                     f"custom={self.width},{self.height} ! "
-                    f"identity name=infer_end signal-handoffs=true ! "
                     f"crop.info "
 
                     f"crop. ! "
                     f"queue max-size-buffers=2 leaky=downstream ! "
                     f"crop_decode ! "
 
+                    f"identity name=infer_start1 signal-handoffs=true ! "
                     # Face landmark detection
                     f"tensor_filter framework=tensorflow2-lite model={self.model_landmark_path} custom=delegate:xnnpack ! "
+                    f"identity name=infer_end1 signal-handoffs=true ! "
 
                     # Decode + Ear detection
                     f"tensor_filter framework=face_mesh_decode model=dummy1 custom={self.width},{self.height} ! "
@@ -438,7 +532,7 @@ class ImageAnalyticsEngine:
                 else:
                     ai_results = {"people": False, "fatigue": None, "raw": None}
                 
-                self.measure_pipeline_metrics(now, self.inference_time, pipeline_latency)
+                self.measure_pipeline_metrics(now, self.inference_time, self.inference_time1, pipeline_latency)
 
                 if ai_results["people"]:
                     if self.result_queue.full():
@@ -468,6 +562,55 @@ class ImageAnalyticsEngine:
         if start:
             self.inference_time = (time.time() - start) * 1000
 
+    def on_person_infer_start(self, element, buffer):
+        self.person_in_frames += 1
+        self.person_total_in += 1
+
+        now = time.perf_counter()
+
+        elapsed = now - self.person_in_last
+
+        if elapsed >= 1.0:
+            self.person_in_fps = self.person_in_frames/ elapsed
+
+            self.person_in_frames = 0
+            self.person_in_last = now
+        
+    def on_person_infer_end(self, element, buffer):
+        self.person_out_frames += 1
+        self.person_total_out += 1
+
+        now = time.perf_counter()
+
+        elapsed = now - self.person_out_last
+
+        if elapsed >= 1.0:
+            self.person_out_fps = self.person_out_frames / elapsed
+
+            # Total dropped frames
+            dropped = self.fps - self.person_in_fps
+
+            self.person_drop_frames = max(0, dropped)
+
+            if self.person_total_in > 0:
+                self.person_drop_rate = (
+                    self.person_drop_frames / self.fps
+                ) * 100.0
+            else:
+                self.person_drop_rate = 0.0
+
+            self.person_out_frames = 0
+            self.person_out_last = now
+
+    def on_infer_start1(self, element, buffer):
+        if buffer.pts != Gst.CLOCK_TIME_NONE:
+            self._infer_timestamps1[buffer.pts] = time.time()
+
+    def on_infer_end1(self, element, buffer):
+        start = self._infer_timestamps1.pop(buffer.pts, None)
+        if start:
+            self.inference_time1 = (time.time() - start) * 1000
+
     def on_new_crop_debug(self, sink, buffer):
         log.info("Got crop tensor buffer")
 
@@ -495,6 +638,33 @@ class ImageAnalyticsEngine:
         except Exception as e:
             print("Error reading buffer:", e)
 
+        finally:
+            buffer.unmap(map_info)
+
+    def on_new_person_count(self, sink, buffer):
+        # log.info("Got person count tensor buffer")
+
+        success, map_info = buffer.map(Gst.MapFlags.READ)
+        if not success:
+            return
+
+        try:
+            # log.info("BBox buffer size (bytes): %d", map_info.size)
+            raw = map_info.data
+
+            header_size = 128
+            payload = raw[header_size:header_size + 16]
+
+            bbox = np.frombuffer(payload, dtype=np.float32)
+
+            if len(bbox) == 4:
+                x, y, w, h = bbox
+
+                with self.draw_overlay_lock:
+                    self.current_bbox = (x, y, w, h)
+
+        except Exception as e:
+            log.error("Error parsing bbox: %s", e)
         finally:
             buffer.unmap(map_info)
 
@@ -614,8 +784,12 @@ class ImageAnalyticsEngine:
                 4: "NO_FACE",
             }
 
+            state = data['state']
+            if state == F_STATE_DISTRACTED:
+                state = F_STATE_NORMAL
+
             context.move_to(position_x, position_y)
-            context.show_text(f"State: {state_names.get(data['state'], 'UNK')}")
+            context.show_text(f"State: {state_names.get(state, 'UNK')}")
             position_y += 20
 
             context.move_to(position_x, position_y)
@@ -659,13 +833,13 @@ class ImageAnalyticsEngine:
             context.show_text("Fatigue: No data")
     
     # Measure pipeline FPS
-    def measure_pipeline_metrics(self, now=0, inference_time=0, pipeline_latency=0):
+    def measure_pipeline_metrics(self, now=0, inference_time=0, inference_time1=0, pipeline_latency=0):
         # Pipeline FPS
         self.result_count += 1
         elapsed = time.perf_counter() - self.last_time
         if elapsed >= 1.0:
             with self.metrics_lock:
-                self.pipeline_fps = (self.result_count - 1) / elapsed
+                self.pipeline_fps = self.result_count / elapsed
             self.result_count = 0
             self.last_time = time.perf_counter()
 
@@ -676,6 +850,12 @@ class ImageAnalyticsEngine:
                     self.avg_inference_time = inference_time
                 else:
                     self.avg_inference_time = (self.avg_inference_time * 0.9) + (inference_time * 0.1)
+            
+            if inference_time1 > 0:
+                if self.avg_inference_time1 == 0:
+                    self.avg_inference_time1 = inference_time1
+                else:
+                    self.avg_inference_time1 = (self.avg_inference_time1 * 0.9) + (inference_time1 * 0.1)
 
             # Pipeline latency
             if pipeline_latency > 0:
@@ -745,7 +925,12 @@ class ImageAnalyticsEngine:
         log.info(f"CPU: {cpu_usage}% | Temp: {temp}°C | RAM: {ram.percent:.2f}%")
         with self.metrics_lock:
             log.info(f"Camera FPS: {self.fps} | Pipeline FPS: {self.pipeline_fps:.2f}")
-            log.info(f"AI Latency: {self.avg_inference_time:.2f}ms | Pipeline Latency: {self.avg_pipeline_latency:.2f}ms")
+            log.info(f"People Count Latency: {self.avg_inference_time:.2f}ms | Fatigue Latency: {self.avg_inference_time1:.2f}ms | Pipeline Latency: {self.avg_pipeline_latency:.2f}ms")
+            log.info(
+                f"Person Branch IN: {self.person_in_fps:.2f} FPS | "
+                f"OUT: {self.person_out_fps:.2f} FPS | "
+                f"DROP: {self.person_drop_rate:.2f}%"
+            )
         if is_critical:
             log.error(f"CRITICAL STATUS: {' | '.join(status_msg)}")
         log.info("-" * 30)
