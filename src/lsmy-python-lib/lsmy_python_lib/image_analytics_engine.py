@@ -134,7 +134,9 @@ class ImageAnalyticsEngine:
 
         self.overlay_update_time = 0
 
-        self.current_bbox = None
+        self.current_bbox = None              # face bbox from blaze_decode
+        self.current_person_count = 0         # smoothed person count, always updated
+        self.current_person_boxes = []        # person boxes, updated in debug mode only
         self.current_landmarks = None
 
         self.current_fatigue_output = None
@@ -217,10 +219,13 @@ class ImageAnalyticsEngine:
 
                 self.infer_start1.connect("handoff", self.on_infer_start1)
                 self.infer_end1.connect("handoff", self.on_infer_end1)
+
+            # Person count result always connected — count exposed regardless of debug mode
+            self.personsink.connect("new-data", self.on_new_person_count)
+
             if self.debug_mode:
                 self.overlay.connect("draw", self.on_draw_overlay)
                 # self.cropsink.connect("new-data", self.on_new_crop_debug)
-                self.personsink.connect("new-data", self.on_new_person_count)
                 self.bboxsink.connect("new-data", self.on_new_bbox)
                 self.landmarksink.connect("new-data", self.on_new_landmarks)
 
@@ -643,29 +648,35 @@ class ImageAnalyticsEngine:
             buffer.unmap(map_info)
 
     def on_new_person_count(self, sink, buffer):
-        # log.info("Got person count tensor buffer")
-
         success, map_info = buffer.map(Gst.MapFlags.READ)
         if not success:
             return
 
         try:
-            # log.info("BBox buffer size (bytes): %d", map_info.size)
             raw = map_info.data
+            # Output format from people_count_decode:
+            #   float[0]             : smoothed count
+            #   float[1+i*4..4+i*4] : (x, y, w, h) pixel-space for person i
+            _MAX_DET = 10
+            _OUTPUT_FLOATS = 1 + _MAX_DET * 4
+            if len(raw) < _OUTPUT_FLOATS * 4:
+                return
 
-            header_size = 128
-            payload = raw[header_size:header_size + 16]
+            data = np.frombuffer(raw[:_OUTPUT_FLOATS * 4], dtype=np.float32)
+            count = int(data[0])
+            self.current_person_count = count
 
-            bbox = np.frombuffer(payload, dtype=np.float32)
-
-            if len(bbox) == 4:
-                x, y, w, h = bbox
-
+            if self.debug_mode:
+                boxes = []
+                for i in range(min(count, _MAX_DET)):
+                    base = 1 + i * 4
+                    boxes.append((float(data[base]), float(data[base + 1]),
+                                   float(data[base + 2]), float(data[base + 3])))
                 with self.draw_overlay_lock:
-                    self.current_bbox = (x, y, w, h)
+                    self.current_person_boxes = boxes
 
         except Exception as e:
-            log.error("Error parsing bbox: %s", e)
+            log.error("Error parsing person count: %s", e)
         finally:
             buffer.unmap(map_info)
 
@@ -732,6 +743,22 @@ class ImageAnalyticsEngine:
             buffer.unmap(map_info)
 
     def on_draw_overlay(self, overlay, context, timestamp, duration):
+        with self.draw_overlay_lock:
+            person_boxes = list(self.current_person_boxes)
+
+        # Draw person bounding boxes (green)
+        if person_boxes:
+            context.set_source_rgb(0.0, 1.0, 0.0)
+            context.set_line_width(2.0)
+            context.select_font_face("monospace", 0, 0)
+            context.set_font_size(14.0)
+            for i, (px, py, pw, ph) in enumerate(person_boxes):
+                context.rectangle(px, py, pw, ph)
+                context.stroke()
+                label = f"person {i + 1}" if len(person_boxes) > 1 else "person"
+                context.move_to(px + 4, py - 4 if py > 18 else py + ph + 14)
+                context.show_text(label)
+
         with self.draw_overlay_lock:
             if self.current_landmarks is not None and self.current_bbox is not None and np.any(self.current_landmarks) and np.any(self.current_bbox):
                 bx, by, bw, bh = self.current_bbox
